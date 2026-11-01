@@ -425,6 +425,7 @@
       flash_diskon: '30',
       rekening_bank: 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
       link_qris: '',
+      qris_aktif: 'Tidak',
       batas_bayar_jam: '24',
       target_omzet_bulanan: '36500000',
       notif_otomatis_lunas: 'Ya',
@@ -1714,13 +1715,33 @@
     }
   }
 
+  function isQrisEnabled() {
+    const st = STATE.settings || {};
+    const flag = st.qris_aktif !== undefined ? String(st.qris_aktif).trim().toLowerCase() : (DEMO_DB.settings.qris_aktif || 'tidak');
+    if (flag === 'tidak' || flag === '0' || flag === 'false' || flag === 'off') return false;
+    const raw = String(st.link_qris || '').trim();
+    if (!raw || /^OFF:|^DISABLED:|^NONAKTIF:/i.test(raw)) return false;
+    return flag === 'ya' || flag === '1' || flag === 'true' || flag === 'on';
+  }
+
+  function getCleanQrisRaw() {
+    const st = STATE.settings || {};
+    let raw = String(st.link_qris || DEMO_DB.settings.link_qris || '').trim();
+    if (/^OFF:|^DISABLED:|^NONAKTIF:/i.test(raw)) {
+      raw = raw.replace(/^OFF:|^DISABLED:|^NONAKTIF:/i, '').trim();
+    }
+    return raw;
+  }
+
   function getEffectivePaymentSettings() {
     const st = STATE.settings || {};
-    const rawQris = String(st.link_qris || DEMO_DB.settings.link_qris || '').trim();
+    const cleanQris = getCleanQrisRaw();
+    const qrisOn = isQrisEnabled();
     return {
       rekening_bank: st.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
-      raw_qris: rawQris,
-      link_qris: rawQris ? driveImgClient(rawQris) : '',
+      qris_aktif: qrisOn,
+      raw_qris: cleanQris,
+      link_qris: cleanQris ? driveImgClient(cleanQris) : '',
       batas_bayar_jam: st.batas_bayar_jam || '24',
       nama_toko: st.nama_toko || DEMO_DB.settings.nama_toko || 'NusaStore',
       nama_perusahaan: st.nama_perusahaan || DEMO_DB.settings.nama_perusahaan || 'PT Nusa Digital Teknologi',
@@ -1792,7 +1813,31 @@
   function renderPaymentMethodPanelsHtml(ord, activeMethod) {
     const pay = getEffectivePaymentSettings();
     const accDigits = extractAccountDigits(pay.rekening_bank);
+    const qrisOn = isQrisEnabled();
 
+    // JIKA QRIS OFF: Tampilkan HANYA 1 METODE PEMBAYARAN (Transfer Bank) tanpa tab switcher
+    if (!qrisOn) {
+      return '<div class="single-pay-card">' +
+          '<div class="single-pay-head">' +
+            '<span class="single-pay-pill">🏦 Metode Pembayaran Resmi: Transfer Bank</span>' +
+            '<span style="font-size:0.75rem;color:var(--muted);">Verifikasi Otomatis</span>' +
+          '</div>' +
+          '<div class="pay-box-card" style="border:1.5px solid rgba(37,99,235,0.4);margin-bottom:0;">' +
+            '<div style="font-size:0.76rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Rekening Tujuan Transfer</div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+              '<div style="font-size:1.05rem;font-weight:800;color:var(--text);">' + esc(pay.rekening_bank) + '</div>' +
+              (accDigits ? '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(accDigits) + '" data-copy-lbl="Nomor rekening">📋 Salin No. Rek (' + esc(accDigits) + ')</button>' : '') +
+            '</div>' +
+            '<div style="margin-top:10px;font-size:0.8rem;color:var(--muted);line-height:1.5;">' +
+              '1. Silakan transfer tepat sejumlah <strong style="color:var(--primary);">Rp ' + rupiah(ord.total_harga) + '</strong>.<br>' +
+              '2. Simpan struk / tangkapan layar bukti transfer.<br>' +
+              '3. Unggah bukti pembayaran pada formulir di bawah ini agar pesanan segera diproses tim admin.' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    // JIKA QRIS ON: Tampilkan 2 Tab Metode Pembayaran (Transfer Bank & QRIS)
     return '<div class="pay-method-tabs">' +
         '<button type="button" class="pay-method-tab ' + (activeMethod !== 'qris' ? 'is-active' : '') + '" data-switch-pay="bank">🏦 Transfer Bank</button>' +
         '<button type="button" class="pay-method-tab ' + (activeMethod === 'qris' ? 'is-active' : '') + '" data-switch-pay="qris">📱 QRIS Instan (E-Wallet &amp; M-Banking)</button>' +
@@ -1885,6 +1930,7 @@
 
   function renderProofUploadWidget(hostEl, ord, onUploaded) {
     if (!hostEl) return;
+    const qrisOn = isQrisEnabled();
     hostEl.innerHTML =
       '<div style="background:var(--surface);border:1.5px dashed var(--primary);border-radius:14px;padding:16px;">' +
         '<h4 style="margin:0 0 4px;font-size:0.95rem;">📤 Unggah Bukti Pembayaran Langsung di Website</h4>' +
@@ -1892,10 +1938,16 @@
         '<form class="form-public-proof">' +
           '<div class="form-grid-2">' +
             '<div class="field"><label>Metode yang Digunakan</label>' +
-              '<select class="select" name="metode_bayar">' +
-                '<option value="Transfer Bank">Transfer Bank</option>' +
-                '<option value="QRIS">QRIS / E-Wallet</option>' +
-              '</select>' +
+              (qrisOn
+                ? '<select class="select" name="metode_bayar">' +
+                    '<option value="Transfer Bank">Transfer Bank</option>' +
+                    '<option value="QRIS">QRIS / E-Wallet</option>' +
+                  '</select>'
+                : '<div style="display:flex;align-items:center;height:42px;padding:0 12px;background:var(--surface-2);border-radius:10px;border:1px solid var(--border);font-weight:700;font-size:0.86rem;color:var(--text);">' +
+                    '<span>🏦 Transfer Bank</span>' +
+                    '<input type="hidden" name="metode_bayar" value="Transfer Bank">' +
+                  '</div>'
+              ) +
             '</div>' +
             '<div class="field"><label>Nama Pengirim / Info Bank (Opsional)</label>' +
               '<input type="text" class="input" name="catatan_bayar" placeholder="Misal: BCA a.n. Budi">' +
@@ -2684,9 +2736,9 @@
     }
     const qrisBadge = $('nav-badge-qris');
     if (qrisBadge) {
-      const hasQris = Boolean(STATE.settings && String(STATE.settings.link_qris || '').trim());
-      qrisBadge.className = 'pill ' + (hasQris ? 'pill-Lunas' : 'pill-Pending');
-      qrisBadge.textContent = hasQris ? 'Aktif' : 'Belum Diisi';
+      const qrisOn = isQrisEnabled();
+      qrisBadge.className = 'pill ' + (qrisOn ? 'pill-Lunas' : 'pill-Pending');
+      qrisBadge.textContent = qrisOn ? 'Aktif' : 'Nonaktif';
     }
   }
 
@@ -3197,7 +3249,10 @@
         '</small>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
           '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_transfer">🏦 Tagihan Bank</button>' +
-          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_qris">📱 Tagihan QRIS</button>' +
+          (isQrisEnabled()
+            ? '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_qris">📱 Tagihan QRIS</button>'
+            : '<button type="button" class="btn btn-ghost btn-sm" disabled style="opacity:0.5;font-size:0.75rem;">(QRIS Nonaktif)</button>'
+          ) +
           '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_pengingat">⏰ Pengingat</button>' +
           '<button type="button" class="btn btn-wa btn-sm" data-wa-tpl="template_pesan_selesai">🎉 Kirim Selesai</button>' +
         '</div>' +
@@ -4416,8 +4471,9 @@
   // ── PANEL ADMIN: METODE PEMBAYARAN, REKENING BANK & BARCODE QRIS ASLI ──────
   function renderAdminPaymentQris(host) {
     const st = STATE.settings || {};
-    const curQris = String(st.link_qris || '').trim();
-    const hasQris = Boolean(curQris);
+    const qrisActive = isQrisEnabled();
+    const curCleanQris = getCleanQrisRaw();
+    const hasQris = Boolean(curCleanQris);
     const sampleOrder = {
       id_pesanan: 'ORD-CONTOH-01',
       nama_pelanggan: 'Pelanggan NusaStore',
@@ -4432,9 +4488,30 @@
               '<h3 style="margin:0;font-size:1.05rem;">📱 Input Menu Barcode QRIS Asli NusaStore</h3>' +
               '<small style="color:var(--muted);">Tampil otomatis di Pop-Up Tagihan Checkout &amp; Menu Cek Pesanan Klien</small>' +
             '</div>' +
-            '<span id="qris-status-pill" class="pill ' + (hasQris ? 'pill-Lunas' : 'pill-Pending') + '">' +
-              (hasQris ? '✓ QRIS Resmi Aktif' : '⏳ Belum Diatur') +
+            '<span id="qris-status-pill" class="pill ' + (qrisActive ? 'pill-Lunas' : 'pill-Pending') + '">' +
+              (qrisActive ? '✓ QRIS Aktif (2 Metode)' : '⏳ QRIS Nonaktif (1 Metode)') +
             '</span>' +
+          '</div>' +
+
+          '<div class="qris-switch-banner ' + (qrisActive ? 'is-active' : 'is-inactive') + '" id="qris-switch-banner-box">' +
+            '<div class="qris-switch-text">' +
+              '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+                '<span style="font-size:1.15rem;">⚡</span>' +
+                '<strong style="font-size:0.95rem;color:var(--text);">Tombol Saklar Fitur QRIS (ON / OFF)</strong>' +
+                '<span id="qris-switch-pill" class="pill ' + (qrisActive ? 'pill-Lunas' : 'pill-Pending') + '">' +
+                  (qrisActive ? '🟢 ON (Aktif di Checkout)' : '🔴 OFF (Hanya 1 Metode)') +
+                '</span>' +
+              '</div>' +
+              '<p style="margin:5px 0 0;font-size:0.77rem;color:var(--muted);line-height:1.45;" id="qris-switch-note">' +
+                (qrisActive
+                  ? 'QRIS sedang AKTIF: Klien di website dapat memilih 2 metode pembayaran (Transfer Bank atau QRIS Instan).'
+                  : 'QRIS sedang NONAKTIF: Klien di website HANYA menggunakan 1 metode bayar saja (Transfer Bank). Tab QRIS disembunyikan.') +
+              '</p>' +
+            '</div>' +
+            '<label class="switch-toggle" title="Klik untuk menyalakan atau mematikan fitur QRIS">' +
+              '<input type="checkbox" id="inp-qris-active-toggle" ' + (qrisActive ? 'checked' : '') + '>' +
+              '<span class="switch-toggle-slider"></span>' +
+            '</label>' +
           '</div>' +
 
           '<div class="qris-upload-dropzone">' +
@@ -4451,7 +4528,7 @@
 
           '<div class="field" style="margin:0;">' +
             '<label>Link Gambar Barcode QRIS / Kode Standar QRIS EMVCo (Opsional Manual)</label>' +
-            '<input class="input" id="inp-qris-link" name="link_qris" value="' + esc(curQris) + '" placeholder="Otomatis terisi saat upload, atau tempel Link Google Drive / Kode 000201...">' +
+            '<input class="input" id="inp-qris-link" name="link_qris" value="' + esc(curCleanQris) + '" placeholder="Otomatis terisi saat upload, atau tempel Link Google Drive / Kode 000201...">' +
             '<small style="color:var(--muted);font-size:0.73rem;display:block;margin-top:4px;line-height:1.4;">Mendukung: <strong>1) Upload langsung di atas</strong>, <strong>2) Link Gambar Google Drive / HTTPS</strong>, atau <strong>3) Kode String QRIS Resmi (diawali 000201...)</strong> untuk nominal otomatis.</small>' +
           '</div>' +
 
@@ -4480,13 +4557,11 @@
           '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--border);">' +
             '<div>' +
               '<h3 style="margin:0;font-size:1.05rem;">👁️ Pratinjau Langsung di Layar Klien</h3>' +
-              '<small style="color:var(--muted);">Simulasi tampilan tab QRIS Instan (Contoh Tagihan Rp 350.000)</small>' +
+              '<small style="color:var(--muted);">Simulasi tampilan checkout klien (Contoh Tagihan Rp 350.000)</small>' +
             '</div>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-test-storefront-qris">🌐 Lihat Etalase</button>' +
           '</div>' +
-          '<div id="admin-qris-live-preview">' +
-            renderOfficialQrisCardHtml(sampleOrder, curQris) +
-          '</div>' +
+          '<div id="admin-qris-live-preview"></div>' +
         '</div>' +
       '</div>';
 
@@ -4497,26 +4572,101 @@
     const clearBtn = $('btn-clear-qris');
     const progEl = $('qris-upload-progress');
     const statusPill = $('qris-status-pill');
+    const toggleInp = $('inp-qris-active-toggle');
 
-    function updatePreviewCard(rawVal) {
+    function updatePreviewCard(rawVal, isActive) {
       if (!previewHost) return;
-      previewHost.innerHTML = renderOfficialQrisCardHtml(sampleOrder, rawVal);
-      bindQrisCardInteractions(previewHost);
-      const active = Boolean(String(rawVal || '').trim());
-      if (statusPill) {
-        statusPill.className = 'pill ' + (active ? 'pill-Lunas' : 'pill-Pending');
-        statusPill.textContent = active ? '✓ QRIS Resmi Aktif' : '⏳ Belum Diatur';
+      const on = isActive !== undefined ? isActive : isQrisEnabled();
+      if (!on) {
+        previewHost.innerHTML =
+          '<div style="background:var(--surface-2);border:1.5px dashed var(--border);border-radius:14px;padding:22px 18px;text-align:center;">' +
+            '<div style="font-size:2.2rem;line-height:1;margin-bottom:8px;">🏦</div>' +
+            '<div style="font-weight:800;font-size:0.96rem;color:var(--text);margin-bottom:6px;">Status: QRIS Sedang Dinonaktifkan (OFF)</div>' +
+            '<div style="font-size:0.8rem;color:var(--muted);line-height:1.5;max-width:340px;margin:0 auto 14px;">' +
+              'Ketika klien melakukan pesanan, sistem <strong>hanya menampilkan 1 metode pembayaran saja (Transfer Bank)</strong>. Tidak ada tombol atau tab QRIS yang membingungkan klien.' +
+            '</div>' +
+            '<div class="single-pay-card" style="text-align:left;max-width:360px;margin:0 auto 14px;">' +
+              '<div class="pay-box-card" style="border:1.5px solid var(--primary);padding:14px;">' +
+                '<div style="font-size:0.73rem;color:var(--muted);font-weight:700;text-transform:uppercase;">Rekening Resmi NusaStore</div>' +
+                '<div style="font-size:1.02rem;font-weight:800;color:var(--text);margin:3px 0 6px;">' + esc(st.rekening_bank || DEMO_DB.settings.rekening_bank) + '</div>' +
+                '<div style="font-size:0.77rem;color:var(--muted);">Total Tagihan: <strong style="color:var(--primary);">Rp 350.000</strong></div>' +
+              '</div>' +
+            '</div>' +
+            '<button type="button" class="btn btn-wa btn-sm" id="btn-quick-turn-qris-on">⚡ Nyalakan Fitur QRIS Sekarang (ON)</button>' +
+          '</div>';
+        const quickOnBtn = previewHost.querySelector('#btn-quick-turn-qris-on');
+        if (quickOnBtn) {
+          quickOnBtn.onclick = function () {
+            if (toggleInp) {
+              toggleInp.checked = true;
+              toggleInp.dispatchEvent(new Event('change'));
+            }
+          };
+        }
+      } else {
+        previewHost.innerHTML = renderOfficialQrisCardHtml(sampleOrder, rawVal);
+        bindQrisCardInteractions(previewHost);
       }
-      if (clearBtn) clearBtn.classList.toggle('hidden', !active);
+
+      if (statusPill) {
+        statusPill.className = 'pill ' + (on ? 'pill-Lunas' : 'pill-Pending');
+        statusPill.textContent = on ? '✓ QRIS Aktif (2 Metode)' : '⏳ QRIS Nonaktif (1 Metode)';
+      }
+      if (clearBtn) clearBtn.classList.toggle('hidden', !Boolean(String(rawVal || '').trim()));
     }
 
-    bindQrisCardInteractions(previewHost);
+    updatePreviewCard(curCleanQris, qrisActive);
 
     const debouncedPreview = debounce(function () {
-      updatePreviewCard(qrisInput ? qrisInput.value : '');
+      updatePreviewCard(qrisInput ? qrisInput.value : '', toggleInp ? toggleInp.checked : false);
     }, 80);
     if (qrisInput) {
       qrisInput.oninput = debouncedPreview;
+    }
+
+    if (toggleInp) {
+      toggleInp.onchange = async function () {
+        const isNowOn = toggleInp.checked;
+        const bannerBox = $('qris-switch-banner-box');
+        const pillEl = $('qris-switch-pill');
+        const noteEl = $('qris-switch-note');
+        if (bannerBox) {
+          bannerBox.classList.toggle('is-active', isNowOn);
+          bannerBox.classList.toggle('is-inactive', !isNowOn);
+        }
+        if (pillEl) {
+          pillEl.className = 'pill ' + (isNowOn ? 'pill-Lunas' : 'pill-Pending');
+          pillEl.textContent = isNowOn ? '🟢 ON (Aktif di Checkout)' : '🔴 OFF (Hanya 1 Metode)';
+        }
+        if (noteEl) {
+          noteEl.textContent = isNowOn
+            ? 'QRIS sedang AKTIF: Klien di website dapat memilih 2 metode pembayaran (Transfer Bank atau QRIS Instan).'
+            : 'QRIS sedang NONAKTIF: Klien di website HANYA menggunakan 1 metode bayar saja (Transfer Bank). Tab QRIS disembunyikan.';
+        }
+
+        const rawVal = qrisInput ? qrisInput.value.trim() : getCleanQrisRaw();
+        const nextQrisField = isNowOn ? rawVal : (rawVal ? ('OFF:' + rawVal) : 'OFF:');
+        const patch = {
+          qris_aktif: isNowOn ? 'Ya' : 'Tidak',
+          link_qris: nextQrisField
+        };
+
+        // 0ms Optimistic UI & Instant Cache Update
+        syncSettingsToLocalCaches(patch);
+        updatePreviewCard(rawVal, isNowOn);
+
+        toast(
+          isNowOn
+            ? 'Fitur QRIS diaktifkan! Klien dapat memilih Transfer Bank atau QRIS Instan.'
+            : 'Fitur QRIS dinonaktifkan! Klien saat ini hanya menggunakan 1 metode (Transfer Bank).',
+          isNowOn ? 'ok' : 'info'
+        );
+
+        const res = await apiCall('adminSaveSettings', { settings: patch }, 'POST');
+        if (res && res.success && res.data && res.data.settings) {
+          syncSettingsToLocalCaches(res.data.settings);
+        }
+      };
     }
 
     if (pickBtn && fileInput) {
@@ -4537,8 +4687,9 @@
         }
         try {
           const prep = await prepareQrisImageUpload(f);
-          // 0ms Instant Preview sebelum server selesai merespons
-          updatePreviewCard(prep.dataUrl);
+          const isCurrentlyOn = toggleInp ? toggleInp.checked : true;
+          // 0ms Instant Preview
+          updatePreviewCard(prep.dataUrl, isCurrentlyOn);
 
           const upRes = await apiCall('adminUploadFile', {
             kind: 'qris',
@@ -4551,22 +4702,24 @@
           if (upRes && upRes.success && upRes.data && upRes.data.url) {
             const finalUrl = upRes.data.url;
             if (qrisInput) qrisInput.value = finalUrl;
-            syncSettingsToLocalCaches({ link_qris: finalUrl });
-            updatePreviewCard(finalUrl);
+            const targetSetting = isCurrentlyOn ? finalUrl : ('OFF:' + finalUrl);
+            const patch = { link_qris: targetSetting };
+            syncSettingsToLocalCaches(patch);
+            updatePreviewCard(finalUrl, isCurrentlyOn);
 
-            const saveRes = await apiCall('adminSaveSettings', { settings: { link_qris: finalUrl } }, 'POST');
+            const saveRes = await apiCall('adminSaveSettings', { settings: patch }, 'POST');
             if (saveRes && saveRes.success) {
               if (saveRes.data && saveRes.data.settings) syncSettingsToLocalCaches(saveRes.data.settings);
-              toast('Barcode QRIS asli NusaStore berhasil diunggah & diaktifkan!', 'ok');
+              toast('Barcode QRIS asli NusaStore berhasil diunggah ke Google Drive!', 'ok');
             } else {
               toast((saveRes && saveRes.message) || 'Gambar terunggah, klik Simpan untuk mengunci pengaturan.', 'info');
             }
           } else {
-            updatePreviewCard(qrisInput ? qrisInput.value : '');
+            updatePreviewCard(qrisInput ? qrisInput.value : '', toggleInp ? toggleInp.checked : false);
             toast((upRes && upRes.message) || 'Gagal mengunggah gambar QRIS ke Google Drive.', 'err');
           }
         } catch (err) {
-          updatePreviewCard(qrisInput ? qrisInput.value : '');
+          updatePreviewCard(qrisInput ? qrisInput.value : '', toggleInp ? toggleInp.checked : false);
           toast('Gagal memproses gambar QRIS: ' + (err.message || err), 'err');
         } finally {
           pickBtn.disabled = false;
@@ -4583,14 +4736,14 @@
         const prevVal = qrisInput ? qrisInput.value : '';
         if (qrisInput) qrisInput.value = '';
         syncSettingsToLocalCaches({ link_qris: '' });
-        updatePreviewCard('');
+        updatePreviewCard('', false);
         toast('Barcode QRIS dihapus.', 'info');
 
         const res = await apiCall('adminSaveSettings', { settings: { link_qris: '' } }, 'POST');
         if (!res || !res.success) {
           if (qrisInput) qrisInput.value = prevVal;
           syncSettingsToLocalCaches({ link_qris: prevVal });
-          updatePreviewCard(prevVal);
+          updatePreviewCard(prevVal, toggleInp ? toggleInp.checked : false);
           toast((res && res.message) || 'Gagal menghapus QRIS di server.', 'err');
         }
       };
@@ -4606,6 +4759,11 @@
       const fd = new FormData(ev.target);
       const patch = {};
       fd.forEach(function (v, k) { patch[k] = String(v || '').trim(); });
+      const isCurrentlyOn = toggleInp ? toggleInp.checked : false;
+      patch.qris_aktif = isCurrentlyOn ? 'Ya' : 'Tidak';
+      const rawEntered = patch.link_qris || '';
+      patch.link_qris = isCurrentlyOn ? rawEntered : (rawEntered ? ('OFF:' + rawEntered) : 'OFF:');
+
       if (patch.link_qris && patch.link_qris.length > 690 && !IS_DEMO) {
         toast('Link terlalu panjang (> 690 karakter). Gunakan tombol Upload Barcode QRIS di atas agar tersimpan ke Google Drive.', 'err');
         return;
@@ -4614,7 +4772,7 @@
       const prevSnapshot = Object.assign({}, STATE.settings);
       // 0ms Optimistic UI & Instant Cache Sync
       syncSettingsToLocalCaches(patch);
-      updatePreviewCard(patch.link_qris);
+      updatePreviewCard(rawEntered, isCurrentlyOn);
       toast('Pengaturan QRIS & Pembayaran berhasil disimpan!', 'ok');
 
       const btn = $('btn-save-qris-settings');
@@ -4624,10 +4782,10 @@
 
       if (res && res.success) {
         if (res.data && res.data.settings) syncSettingsToLocalCaches(res.data.settings);
-        updatePreviewCard(STATE.settings.link_qris || '');
+        updatePreviewCard(getCleanQrisRaw(), isQrisEnabled());
       } else {
         syncSettingsToLocalCaches(prevSnapshot);
-        updatePreviewCard(prevSnapshot.link_qris || '');
+        updatePreviewCard(getCleanQrisRaw(), isQrisEnabled());
         toast((res && res.message) || 'Gagal menyimpan pengaturan pembayaran.', 'err');
       }
     };
@@ -4654,8 +4812,8 @@
           '<div class="field"><label>Rekening Bank Tujuan Transfer</label><input class="input" name="rekening_bank" value="' + esc(st.rekening_bank || '') + '"></div>' +
           '<div class="field">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">' +
-              '<label style="margin:0;">Barcode QRIS Resmi (Link Gambar / Kode QRIS)</label>' +
-              '<button type="button" class="copy-pill-btn" id="btn-jump-payment-tab">📷 Buka Menu Upload QRIS</button>' +
+              '<label style="margin:0;">Barcode QRIS Resmi ' + (isQrisEnabled() ? '<span style="color:#059669;font-weight:700;">(🟢 Aktif)</span>' : '<span style="color:#DC2626;font-weight:700;">(🔴 Nonaktif)</span>') + '</label>' +
+              '<button type="button" class="copy-pill-btn" id="btn-jump-payment-tab">⚡ Atur Saklar ON/OFF &amp; QRIS</button>' +
             '</div>' +
             '<input class="input" name="link_qris" value="' + esc(st.link_qris || '') + '" placeholder="Upload via menu Pembayaran & QRIS atau tempel link di sini">' +
           '</div>' +

@@ -1,0 +1,21 @@
+{
+  "name": "NusaStore — Enterprise Digital",
+  "short_name": "NusaStore",
+  "description": "Katalog resmi produk digital, template web, otomasi WhatsApp Fonnte & CRM.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0B1120",
+  "theme_color": "#2563EB",
+  "icons": [
+    {
+      "src": "favicon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

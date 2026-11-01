@@ -2255,6 +2255,102 @@ img {
   border-color: var(--primary);
 }
 
+/* ── Saklar Toggle ON / OFF QRIS & Kartu Metode Tunggal (Transfer Bank) ──── */
+.qris-switch-banner {
+  background: var(--surface-2);
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  padding: 13px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.2s ease;
+}
+.qris-switch-banner.is-active {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: var(--wa-soft);
+}
+.qris-switch-banner.is-inactive {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.05);
+}
+.qris-switch-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 29px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.switch-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background-color: #94A3B8;
+  border-radius: 99px;
+  transition: background-color 0.22s ease, box-shadow 0.22s ease;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+.switch-toggle-slider::before {
+  position: absolute;
+  content: "";
+  height: 21px;
+  width: 21px;
+  left: 4px;
+  bottom: 4px;
+  background-color: #FFFFFF;
+  border-radius: 50%;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.switch-toggle input:checked + .switch-toggle-slider {
+  background-color: #10B981;
+}
+.switch-toggle input:checked + .switch-toggle-slider::before {
+  transform: translateX(23px);
+}
+.switch-toggle:focus-within .switch-toggle-slider {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Kartu Pembayaran Tunggal saat QRIS Nonaktif (Transfer Bank Only) */
+.single-pay-card {
+  margin-bottom: 14px;
+}
+.single-pay-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.single-pay-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+}
+
 @media print {
   body * { visibility: hidden !important; }
   #invoice-print-area, #invoice-print-area * { visibility: visible !important; }
@@ -2542,6 +2638,8 @@ img {
   .pay-method-tabs { grid-template-columns: 1fr; }
   .qris-actions-row { grid-template-columns: 1fr; }
   .qris-official-head { flex-wrap: wrap; }
+  .qris-switch-banner { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .qris-switch-banner .switch-toggle { align-self: flex-end; }
   .admin-sidebar-foot .admin-nav-btn { padding: 6px 8px; font-size: 0.71rem; }
   .nl-form { flex-direction: column; }
   .nl-form .btn { width: 100%; justify-content: center; }
