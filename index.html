@@ -37,6 +37,7 @@
           <span id="ui-promo-topbar">Cloud Server Licensing &amp; Web Solutions Flash Sale — Hemat hingga 45% Hari Ini!</span>
         </div>
         <div class="topbar-actions">
+          <button type="button" class="topbar-link" id="top-open-tracker">💳 Konfirmasi Pembayaran</button>
           <button type="button" class="topbar-link" id="btn-open-review-form">✨ Tulis Testimoni</button>
           <button type="button" class="topbar-link" id="btn-open-admin">🔐 Admin Portal</button>
         </div>
@@ -66,6 +67,12 @@
         </div>
 
         <div class="header-tools">
+          <button type="button" class="tracker-header-btn" id="btn-open-order-tracker" title="Cek Status Pesanan, Pembayaran & Ambil Lisensi">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            <span class="tracker-btn-text">Cek Pesanan</span>
+            <span id="my-order-badge" class="badge-count hidden">0</span>
+          </button>
+
           <button type="button" class="icon-btn" id="btn-theme-toggle" title="Ganti Tema Terang/Gelap" aria-label="Ganti Tema">
             <svg id="icon-sun" class="hidden" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             <svg id="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -187,8 +194,8 @@
         <div class="usp-grid">
           <div class="usp-card">
             <div class="usp-icon">⚡</div>
-            <h4>Checkout WhatsApp 1-Klik</h4>
-            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Tanpa paksaan buat akun rumit. Pesanan terekam otomatis di Google Sheets sekaligus membuka ruang chat WhatsApp resmi.</p>
+            <h4>Checkout &amp; Pembayaran Hybrid</h4>
+            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Bayar mandiri via Transfer Bank / QRIS &amp; unggah bukti bayar langsung di website, atau konfirmasi cepat via chat WhatsApp resmi.</p>
           </div>
           <div class="usp-card">
             <div class="usp-icon">🛡️</div>
@@ -236,6 +243,7 @@
               <li><a href="#top">Beranda Utama</a></li>
               <li><a href="#products">Katalog Produk &amp; Jasa</a></li>
               <li><a href="#testimonials">Testimoni Pelanggan</a></li>
+              <li><button type="button" id="ft-open-tracker">💳 Cek Pesanan &amp; Pembayaran</button></li>
               <li><button type="button" id="ft-open-cart">Keranjang Belanja</button></li>
               <li><button type="button" id="ft-open-admin">Portal Admin Toko</button></li>
             </ul>
@@ -334,6 +342,39 @@
         <button type="button" class="btn btn-ghost btn-sm" data-close="modal-product">✕ Tutup</button>
       </div>
       <div id="mp-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- OPSI 1: Modal Tagihan & Instruksi Pembayaran Instan Pasca-Checkout -->
+  <div id="modal-payment-checkout" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-lg">
+      <div class="modal-head">
+        <h3 id="mpc-title" style="margin:0;font-size:1.12rem;">💳 Instruksi Pembayaran &amp; Konfirmasi Pesanan</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-payment-checkout">✕ Tutup</button>
+      </div>
+      <div id="mpc-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- OPSI 2: Modal Cek Status Pesanan, Unggah Bukti Bayar, Lisensi & Faktur Pelanggan -->
+  <div id="modal-order-tracker" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-lg">
+      <div class="modal-head">
+        <h3 style="margin:0;font-size:1.12rem;">💳 Cek Pesanan, Pembayaran &amp; Ambil Lisensi</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-order-tracker">✕ Tutup</button>
+      </div>
+      <div id="mot-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Lightbox Bukti Transfer / QRIS Langsung di Body -->
+  <div id="modal-proof-lightbox" class="overlay hidden" role="dialog" aria-modal="true" style="z-index:160;">
+    <div class="modal-card" style="max-width:640px;">
+      <div class="modal-head">
+        <h3 id="mpl-title" style="margin:0;font-size:1.05rem;">📎 Pratinjau Bukti Pembayaran</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-proof-lightbox">✕ Tutup</button>
+      </div>
+      <div id="mpl-body" class="modal-body" style="text-align:center;"></div>
     </div>
   </div>
 
@@ -487,6 +528,7 @@
         <div class="wa-bubble-msg" id="wa-greeting-text">
           Halo Kak! 👋 Ada yang bisa tim NusaStore bantu hari ini? Pilih topik cepat atau ketik pesan di bawah ya.
         </div>
+        <button type="button" id="wa-open-tracker-btn" class="btn btn-primary btn-sm" style="width:100%;">💳 Cek Pesanan &amp; Upload Bukti di Web</button>
         <button type="button" class="wa-quick-topic" data-topic="Halo Tim NusaStore, saya ingin tanya detail produk & promo katalog hari ini.">🏷️ Tanya Detail Produk &amp; Diskon</button>
         <button type="button" class="wa-quick-topic" data-topic="Halo Tim NusaStore, saya tertarik konsultasi pembuatan Web / Otomasi WhatsApp Bisnis.">💻 Konsultasi Custom Web &amp; Otomasi WA</button>
         <button type="button" class="wa-quick-topic" data-topic="Halo Admin NusaStore, saya ingin konfirmasi pembayaran pesanan saya.">🧾 Konfirmasi Pembayaran / Lisensi</button>

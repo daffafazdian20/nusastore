@@ -30,6 +30,7 @@
   const LS = {
     CART: 'ns3_cart',
     WISH: 'ns3_wish',
+    MY_ORDERS: 'ns3_my_orders',
     THEME: 'ns3_theme',
     PUB_CACHE: 'ns3_pub_swr',
     ADMIN_TOKEN: 'ns3_admin_token',
@@ -44,6 +45,7 @@
     testimonials: [],
     cart: loadJson(LS.CART, []),
     wish: loadJson(LS.WISH, []),
+    myOrders: loadJson(LS.MY_ORDERS, []),
     filterCat: 'ALL',
     searchQuery: '',
     sortBy: 'featured',
@@ -135,6 +137,65 @@
   }
   function openOverlay(id) { const el = $(id); if (el) el.classList.remove('hidden'); }
   function closeOverlay(id) { const el = $(id); if (el) el.classList.add('hidden'); }
+
+  function copyText(val, label) {
+    const text = String(val || '').trim();
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast((label || 'Teks') + ' berhasil disalin!', 'ok');
+      }).catch(function () {
+        fallbackCopyText(text, label);
+      });
+    } else {
+      fallbackCopyText(text, label);
+    }
+  }
+  function fallbackCopyText(text, label) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast((label || 'Teks') + ' berhasil disalin!', 'ok'); } catch (e) { /* skip */ }
+    ta.remove();
+  }
+  function driveImgClient(url) {
+    const s = String(url || '').trim();
+    if (!s) return '';
+    const m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m ? ('https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1200') : s;
+  }
+  function extractAccountDigits(str) {
+    const m = String(str || '').match(/(\d[\d\s-]{6,}\d)/);
+    return m ? m[1].replace(/\D/g, '') : '';
+  }
+  function openProofLightbox(url, title) {
+    if (!url) return;
+    const imgUrl = driveImgClient(url);
+    $('mpl-title').textContent = title || '📎 Pratinjau Bukti Pembayaran';
+    $('mpl-body').innerHTML =
+      '<div style="background:var(--surface-2);padding:12px;border-radius:12px;margin-bottom:14px;">' +
+        '<img src="' + esc(imgUrl) + '" alt="Bukti" style="max-width:100%;max-height:65vh;border-radius:10px;object-fit:contain;margin:0 auto;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';">' +
+        '<div style="display:none;padding:24px;color:var(--muted);font-size:0.86rem;">Berkas berupa dokumen PDF atau memerlukan pembukaan langsung di Google Drive.</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;">' +
+        '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm">🔗 Buka Berkas Asli di Tab Baru</a>' +
+        '<button type="button" class="btn btn-outline btn-sm" data-close="modal-proof-lightbox">Tutup Pratinjau</button>' +
+      '</div>';
+    openOverlay('modal-proof-lightbox');
+  }
+  function saveMyLocalOrder(rec) {
+    if (!rec || !rec.id_pesanan) return;
+    const list = Array.isArray(STATE.myOrders) ? STATE.myOrders.slice() : [];
+    const ix = list.findIndex(function (x) { return x.id_pesanan === rec.id_pesanan; });
+    if (ix >= 0) list[ix] = Object.assign({}, list[ix], rec);
+    else list.unshift(rec);
+    STATE.myOrders = list.slice(0, 15);
+    saveJson(LS.MY_ORDERS, STATE.myOrders);
+    updateHeaderBadges();
+  }
 
   // ── Data Simulasi Lokal (Aktif otomatis saat GAS_URL masih kosong) ──────────
   const DEMO_DB = (function buildDemoDb() {
@@ -458,7 +519,7 @@
   let _writeEpoch = 0;
 
   function isReadOnlyAction(action) {
-    return ['getPublicData', 'ping', 'adminBootstrap', 'adminSync', 'adminNotifCrmBootstrap', 'adminFonnteStatus', 'adminCrmGetInteractions'].indexOf(action) >= 0;
+    return ['getPublicData', 'ping', 'trackPublicOrder', 'adminBootstrap', 'adminSync', 'adminNotifCrmBootstrap', 'adminFonnteStatus', 'adminCrmGetInteractions'].indexOf(action) >= 0;
   }
 
   async function apiCall(action, payload, method) {
@@ -558,7 +619,58 @@
           riwayat_status: fmtDateShort(new Date().toISOString()) + ' Dibuat (Katalog Web)', invoiceSig: 'DEMOSIG88'
         };
         DEMO_DB.orders.push(rec);
-        return ok({ id: id, total: total, items: built }, 'Pesanan tercatat (Simulasi Lokal).');
+        return ok({
+          id: id,
+          total: total,
+          items: built,
+          invoiceSig: 'DEMOSIG88',
+          paymentInfo: {
+            rekening_bank: DEMO_DB.settings.rekening_bank,
+            link_qris: DEMO_DB.settings.link_qris,
+            batas_bayar_jam: DEMO_DB.settings.batas_bayar_jam,
+            nama_toko: DEMO_DB.settings.nama_toko,
+            nama_perusahaan: DEMO_DB.settings.nama_perusahaan,
+            alamat_toko: DEMO_DB.settings.alamat_toko,
+            npwp: DEMO_DB.settings.npwp,
+            nomor_wa_admin: DEMO_DB.settings.nomor_wa_admin
+          }
+        }, 'Pesanan tercatat (Simulasi Lokal).');
+      }
+      case 'trackPublicOrder': {
+        const p = b.payload || b;
+        const wa = normPhone(p.wa);
+        const oid = String(p.orderId || '').trim().toUpperCase();
+        const matched = DEMO_DB.orders.filter(function (o) {
+          if (normPhone(o.no_whatsapp) !== wa) return false;
+          if (oid && String(o.id_pesanan).toUpperCase() !== oid) return false;
+          return true;
+        }).slice().reverse().map(function (o) {
+          return Object.assign({}, o, { has_bukti: !!o.link_bukti_transfer });
+        });
+        return ok({
+          orders: matched,
+          paymentInfo: {
+            rekening_bank: DEMO_DB.settings.rekening_bank,
+            link_qris: DEMO_DB.settings.link_qris,
+            batas_bayar_jam: DEMO_DB.settings.batas_bayar_jam,
+            nama_toko: DEMO_DB.settings.nama_toko,
+            nama_perusahaan: DEMO_DB.settings.nama_perusahaan,
+            alamat_toko: DEMO_DB.settings.alamat_toko,
+            npwp: DEMO_DB.settings.npwp,
+            nomor_wa_admin: DEMO_DB.settings.nomor_wa_admin
+          }
+        }, matched.length ? (matched.length + ' pesanan ditemukan.') : 'Pesanan belum ditemukan.');
+      }
+      case 'uploadPublicPaymentProof': {
+        const p = b.payload || b;
+        const ord = DEMO_DB.orders.find(function (o) {
+          return String(o.id_pesanan).toUpperCase() === String(p.orderId || '').toUpperCase() && normPhone(o.no_whatsapp) === normPhone(p.wa);
+        });
+        if (!ord) return fail('Pesanan tidak ditemukan atau Nomor WA tidak cocok.');
+        ord.link_bukti_transfer = 'data:' + (p.mime || 'image/png') + ';base64,' + (p.base64 || '');
+        ord.metode_bayar = p.metode_bayar || 'Transfer Bank';
+        ord.riwayat_status = (ord.riwayat_status ? ord.riwayat_status + '; ' : '') + fmtDateShort(new Date().toISOString()) + ' Bukti bayar diunggah pelanggan (' + ord.metode_bayar + ')';
+        return ok({ order: Object.assign({}, ord, { has_bukti: true }) }, 'Bukti pembayaran berhasil diterima (Simulasi)!');
       }
       case 'subscribeNewsletter':
         return ok(null, 'Berhasil berlangganan newsletter NusaStore!');
@@ -1099,7 +1211,7 @@
             '</div>' +
             '<div class="field"><label>Catatan Pesanan (Opsional)</label><input class="input" name="catatan" placeholder="Misal: Nama domain / jadwal setup..."></div>' +
             '<div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px;">' +
-              '<button type="submit" class="btn btn-wa btn-lg btn-shimmer">💬 Pesan Sekarang di WhatsApp</button>' +
+              '<button type="submit" class="btn btn-primary btn-lg btn-shimmer">💳 Buat Pesanan &amp; Bayar Sekarang</button>' +
               '<button type="button" class="btn btn-outline btn-lg" id="mp-add-cart-btn">+ Keranjang</button>' +
             '</div>' +
           '</form>' +
@@ -1139,9 +1251,11 @@
   // ── Keranjang Belanja & Wishlist ────────────────────────────────────────────
   function updateHeaderBadges() {
     const cartQty = STATE.cart.reduce(function (s, i) { return s + (i.qty || 1); }, 0);
-    const cb = $('cart-badge'), wb = $('wish-badge');
+    const myCount = Array.isArray(STATE.myOrders) ? STATE.myOrders.length : 0;
+    const cb = $('cart-badge'), wb = $('wish-badge'), mb = $('my-order-badge');
     if (cb) { cb.textContent = String(cartQty); cb.classList.toggle('hidden', cartQty <= 0); }
     if (wb) { wb.textContent = String(STATE.wish.length); wb.classList.toggle('hidden', STATE.wish.length <= 0); }
+    if (mb) { mb.textContent = String(myCount); mb.classList.toggle('hidden', myCount <= 0); }
   }
 
   function addToCart(pid, qty) {
@@ -1238,7 +1352,7 @@
         '<span style="font-weight:600;color:var(--muted);">Total Estimasi</span>' +
         '<strong class="tabular" style="font-size:1.2rem;font-family:var(--font-display);color:var(--primary);">Rp ' + rupiah(grandTotal) + '</strong>' +
       '</div>' +
-      '<button type="button" class="btn btn-wa btn-lg btn-shimmer" style="width:100%;" id="btn-submit-cart-wa">💬 Checkout ke WhatsApp</button>';
+      '<button type="button" class="btn btn-primary btn-lg btn-shimmer" style="width:100%;" id="btn-submit-cart-wa">💳 Buat Pesanan &amp; Pilih Pembayaran</button>';
 
     body.querySelectorAll('[data-cart-delta]').forEach(function (b) {
       b.onclick = function () {
@@ -1276,6 +1390,27 @@
     openOverlay('drawer-cart');
   }
 
+  function buildCustomerWaConfirmUrl(ord, extraStatusNote) {
+    const st = STATE.settings || {};
+    let parsedItems = [];
+    try { parsedItems = JSON.parse(ord.item_json || '[]'); } catch (e) { parsedItems = []; }
+    const lines = parsedItems.length
+      ? parsedItems.map(function (it) { return '- ' + it.nama + ' (x' + it.qty + ') = Rp ' + rupiah(it.subtotal || (it.harga * it.qty)); }).join('\n')
+      : ('- ' + (ord.nama_produk || 'Produk') + ' = Rp ' + rupiah(ord.total_harga));
+
+    let msg = (st.template_pesan_web || 'Halo {nama_toko}, saya ingin mengonfirmasi pesanan:\n{daftar_produk}\n- Nama Pemesan: {nama}\n- No. HP: {no_wa}\n- Catatan: {catatan}\n- ID Pesanan: {id_pesanan}\nMohon dibantu verifikasi ya. Terima kasih!')
+      .replace(/\{nama_toko\}/g, st.nama_toko || 'NusaStore')
+      .replace(/\{daftar_produk\}/g, lines + '\nTotal Tagihan: Rp ' + rupiah(ord.total_harga))
+      .replace(/\{nama\}/g, ord.nama_pelanggan || '')
+      .replace(/\{no_wa\}/g, ord.no_whatsapp || '')
+      .replace(/\{catatan\}/g, ord.catatan || '-')
+      .replace(/\{id_pesanan\}/g, ord.id_pesanan || '');
+
+    if (extraStatusNote) msg += '\n\nInfo Tambahan: ' + extraStatusNote;
+    const waAdmin = normPhone(st.nomor_wa_admin || DEMO_DB.settings.nomor_wa_admin || '6281288009900');
+    return 'https://wa.me/' + waAdmin + '?text=' + encodeURIComponent(msg);
+  }
+
   async function processCheckoutSubmit(orderPayload, onSuccess) {
     if (orderPayload.nama.length < 2) { toast('Nama pemesan wajib diisi.', 'err'); return; }
     const cleanWa = normPhone(orderPayload.wa);
@@ -1284,37 +1419,577 @@
     const orderId = genClientOrderId();
     orderPayload.id = orderId;
 
-    // Bangun teks WhatsApp instan supaya tab WA langsung terbuka tanpa terblokir pop-up blocker
-    const st = STATE.settings;
     let total = 0;
-    const lines = orderPayload.items.map(function (it) {
+    let totalQty = 0;
+    const builtItems = orderPayload.items.map(function (it) {
       const p = STATE.products.find(function (x) { return x.id_produk === it.id; });
       const h = p ? effPrice(p) : 0;
-      total += h * it.qty;
-      return '- ' + (p ? p.nama_produk : it.id) + ' (x' + it.qty + ') = Rp ' + rupiah(h * it.qty);
-    }).join('\n');
+      const q = Math.max(1, Number(it.qty) || 1);
+      total += h * q;
+      totalQty += q;
+      return { id: it.id, nama: p ? p.nama_produk : it.id, qty: q, harga: h, subtotal: h * q };
+    });
 
-    const msg = (st.template_pesan_web || 'Halo {nama_toko}, saya ingin memesan:\n{daftar_produk}\nID: {id_pesanan}')
-      .replace(/\{nama_toko\}/g, st.nama_toko || 'NusaStore')
-      .replace(/\{daftar_produk\}/g, lines + '\nTotal: Rp ' + rupiah(total))
-      .replace(/\{nama\}/g, orderPayload.nama)
-      .replace(/\{no_wa\}/g, cleanWa)
-      .replace(/\{catatan\}/g, orderPayload.catatan || '-')
-      .replace(/\{id_pesanan\}/g, orderId);
+    const localOrd = {
+      id_pesanan: orderId,
+      tanggal_order: new Date().toISOString(),
+      nama_pelanggan: orderPayload.nama,
+      no_whatsapp: cleanWa,
+      nama_produk: builtItems.map(function (i) { return i.nama + (i.qty > 1 ? ' (x' + i.qty + ')' : ''); }).join('; '),
+      total_harga: total,
+      qty: totalQty,
+      item_json: JSON.stringify(builtItems),
+      status_pesanan: 'Pending',
+      catatan: orderPayload.catatan || '',
+      metode_bayar: '',
+      has_bukti: false,
+      kunci_lisensi: '',
+      riwayat_status: fmtDateShort(new Date().toISOString()) + ' Pesanan dibuat di website',
+      invoiceSig: 'PENDING'
+    };
 
-    const waAdmin = normPhone(st.nomor_wa_admin || '6281288009900');
-    window.open('https://wa.me/' + waAdmin + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
-
-    sayMascot('Pesanan ' + orderId + ' dikirim! 🎉🚀', 4000);
+    saveMyLocalOrder(localOrd);
     if (onSuccess) onSuccess();
+
+    // OPSI 1: Buka Pop-Up Pembayaran Instan (Rekening Bank + QRIS + Upload Bukti + WA)
+    openPaymentInstructionModal(localOrd, true);
+    sayMascot('Pesanan ' + orderId + ' dibuat! Silakan pilih metode pembayaran 💳✨', 4200);
 
     try {
       const res = await apiCall('submitPublicOrder', { payload: orderPayload }, 'POST');
-      if (res.success) toast('Pesanan ' + orderId + ' tercatat otomatis di database!', 'ok');
-      else toast(res.message || 'Gagal mencatat ke server, silakan lanjutkan di WA.', 'err');
+      if (res && res.success) {
+        if (res.data && res.data.paymentInfo) {
+          STATE.settings = Object.assign({}, STATE.settings, res.data.paymentInfo);
+        }
+        if (res.data && res.data.invoiceSig) localOrd.invoiceSig = res.data.invoiceSig;
+        if (res.data && res.data.total) localOrd.total_harga = res.data.total;
+        saveMyLocalOrder(localOrd);
+
+        const syncPill = $('mpc-sync-pill');
+        if (syncPill) {
+          syncPill.className = 'pill pill-Lunas';
+          syncPill.textContent = '✓ Tercatat Resmi di Sistem';
+        }
+        refreshPaymentMethodBoxInModal();
+        toast('Pesanan ' + orderId + ' berhasil tercatat! Silakan selesaikan pembayaran.', 'ok');
+      } else {
+        const syncPill = $('mpc-sync-pill');
+        if (syncPill) {
+          syncPill.className = 'pill pill-Pending';
+          syncPill.textContent = '⚠️ Lanjutkan Konfirmasi via WA';
+        }
+        toast((res && res.message) || 'Silakan konfirmasi pesanan melalui tombol WhatsApp.', 'err');
+      }
     } catch (e) {
-      toast('Koneksi sibuk, lanjutkan konfirmasi langsung di WhatsApp.', 'info');
+      const syncPill = $('mpc-sync-pill');
+      if (syncPill) {
+        syncPill.className = 'pill pill-Pending';
+        syncPill.textContent = '⚠️ Koneksi Sibuk — Gunakan Tombol WA';
+      }
     }
+  }
+
+  function getEffectivePaymentSettings() {
+    const st = STATE.settings || {};
+    return {
+      rekening_bank: st.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
+      link_qris: st.link_qris ? driveImgClient(st.link_qris) : '',
+      batas_bayar_jam: st.batas_bayar_jam || '24',
+      nama_toko: st.nama_toko || 'NusaStore',
+      nomor_wa_admin: st.nomor_wa_admin || DEMO_DB.settings.nomor_wa_admin || '6281288009900'
+    };
+  }
+
+  function renderPaymentMethodPanelsHtml(ord, activeMethod) {
+    const pay = getEffectivePaymentSettings();
+    const accDigits = extractAccountDigits(pay.rekening_bank);
+    const qrFallback = 'https://quickchart.io/qr?size=200&text=' + encodeURIComponent('NUSASTORE|' + ord.id_pesanan + '|RP' + Math.round(Number(ord.total_harga) || 0));
+
+    return '<div class="pay-method-tabs">' +
+        '<button type="button" class="pay-method-tab ' + (activeMethod !== 'qris' ? 'is-active' : '') + '" data-switch-pay="bank">🏦 Transfer Bank</button>' +
+        '<button type="button" class="pay-method-tab ' + (activeMethod === 'qris' ? 'is-active' : '') + '" data-switch-pay="qris">📱 QRIS Instan (E-Wallet &amp; M-Banking)</button>' +
+      '</div>' +
+      '<div id="pay-tab-bank" class="pay-box-card ' + (activeMethod === 'qris' ? 'hidden' : '') + '">' +
+        '<div style="font-size:0.76rem;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:6px;">Rekening Tujuan Resmi</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+          '<div style="font-size:1.02rem;font-weight:800;color:var(--text);">' + esc(pay.rekening_bank) + '</div>' +
+          (accDigits ? '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(accDigits) + '" data-copy-lbl="Nomor rekening">📋 Salin No. Rek (' + esc(accDigits) + ')</button>' : '') +
+        '</div>' +
+        '<div style="margin-top:10px;font-size:0.8rem;color:var(--muted);line-height:1.5;">' +
+          '1. Transfer tepat sejumlah <strong style="color:var(--primary);">Rp ' + rupiah(ord.total_harga) + '</strong>.<br>' +
+          '2. Simpan tangkapan layar / struk bukti transfer.<br>' +
+          '3. Unggah bukti pembayaran pada formulir di bawah agar pesanan segera diverifikasi.' +
+        '</div>' +
+      '</div>' +
+      '<div id="pay-tab-qris" class="pay-box-card ' + (activeMethod !== 'qris' ? 'hidden' : '') + '" style="text-align:center;">' +
+        (pay.link_qris
+          ? '<div style="font-size:0.82rem;font-weight:700;margin-bottom:8px;">Scan QRIS Resmi ' + esc(pay.nama_toko) + ' (GoPay, OVO, DANA, ShopeePay, M-Banking)</div>' +
+            '<img src="' + esc(pay.link_qris) + '" alt="QRIS Resmi" style="max-width:230px;width:100%;border-radius:12px;border:1px solid var(--border);padding:8px;background:#FFF;margin:0 auto 10px;cursor:pointer;" id="btn-zoom-qris">' +
+            '<div><button type="button" class="copy-pill-btn" id="btn-zoom-qris-2">🔍 Perbesar Gambar QRIS</button></div>'
+          : '<div style="font-size:0.84rem;font-weight:700;margin-bottom:6px;">Kode Referensi Pesanan #' + esc(ord.id_pesanan) + '</div>' +
+            '<img src="' + esc(qrFallback) + '" width="150" height="150" alt="QR Referensi" style="border-radius:12px;border:1px solid var(--border);padding:6px;background:#FFF;margin:0 auto 8px;">' +
+            '<div style="font-size:0.79rem;color:var(--muted);max-width:440px;margin:0 auto;">Gambar QRIS Merchant dapat diminta langsung dalam 1 klik melalui tombol <strong>Konfirmasi via WhatsApp</strong> di bawah, atau gunakan tab <strong>Transfer Bank</strong> untuk pembayaran instan.</div>'
+        ) +
+      '</div>';
+  }
+
+  function bindPaymentMethodTabs(rootEl) {
+    const pay = getEffectivePaymentSettings();
+    rootEl.querySelectorAll('[data-switch-pay]').forEach(function (btn) {
+      btn.onclick = function () {
+        const mode = btn.getAttribute('data-switch-pay');
+        rootEl.querySelectorAll('[data-switch-pay]').forEach(function (x) {
+          x.classList.toggle('is-active', x.getAttribute('data-switch-pay') === mode);
+        });
+        const bEl = rootEl.querySelector('#pay-tab-bank');
+        const qEl = rootEl.querySelector('#pay-tab-qris');
+        if (bEl) bEl.classList.toggle('hidden', mode !== 'bank');
+        if (qEl) qEl.classList.toggle('hidden', mode !== 'qris');
+        const sel = rootEl.querySelector('[name="metode_bayar"]');
+        if (sel) sel.value = mode === 'qris' ? 'QRIS' : 'Transfer Bank';
+      };
+    });
+    rootEl.querySelectorAll('[data-copy-val]').forEach(function (btn) {
+      btn.onclick = function () { copyText(btn.getAttribute('data-copy-val'), btn.getAttribute('data-copy-lbl')); };
+    });
+    const z1 = rootEl.querySelector('#btn-zoom-qris');
+    const z2 = rootEl.querySelector('#btn-zoom-qris-2');
+    if (z1 && pay.link_qris) z1.onclick = function () { openProofLightbox(pay.link_qris, '📱 QRIS Resmi ' + pay.nama_toko); };
+    if (z2 && pay.link_qris) z2.onclick = function () { openProofLightbox(pay.link_qris, '📱 QRIS Resmi ' + pay.nama_toko); };
+  }
+
+  let _activeCheckoutOrd = null;
+  function refreshPaymentMethodBoxInModal() {
+    const host = $('mpc-pay-methods-host');
+    if (!host || !_activeCheckoutOrd) return;
+    host.innerHTML = renderPaymentMethodPanelsHtml(_activeCheckoutOrd, 'bank');
+    bindPaymentMethodTabs(host);
+  }
+
+  function renderProofUploadWidget(hostEl, ord, onUploaded) {
+    if (!hostEl) return;
+    hostEl.innerHTML =
+      '<div style="background:var(--surface);border:1.5px dashed var(--primary);border-radius:14px;padding:16px;">' +
+        '<h4 style="margin:0 0 4px;font-size:0.95rem;">📤 Unggah Bukti Pembayaran Langsung di Website</h4>' +
+        '<p style="margin:0 0 12px;font-size:0.8rem;color:var(--muted);">Bukti transfer Anda otomatis masuk ke sistem Admin tanpa harus mengantre chat.</p>' +
+        '<form class="form-public-proof">' +
+          '<div class="form-grid-2">' +
+            '<div class="field"><label>Metode yang Digunakan</label>' +
+              '<select class="select" name="metode_bayar">' +
+                '<option value="Transfer Bank">Transfer Bank</option>' +
+                '<option value="QRIS">QRIS / E-Wallet</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="field"><label>Nama Pengirim / Info Bank (Opsional)</label>' +
+              '<input type="text" class="input" name="catatan_bayar" placeholder="Misal: BCA a.n. Budi">' +
+            '</div>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label>Pilih Foto / Screenshot / PDF Bukti Bayar (Maks. 5 MB) *</label>' +
+            '<input type="file" class="input proof-file-inp" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" required style="font-size:0.82rem;">' +
+          '</div>' +
+          '<div class="proof-local-preview hidden" style="margin-bottom:12px;text-align:center;background:var(--surface-2);padding:10px;border-radius:10px;">' +
+            '<img src="" alt="Pratinjau Bukti" style="max-height:150px;border-radius:8px;margin:0 auto;">' +
+          '</div>' +
+          '<button type="submit" class="btn btn-primary btn-shimmer proof-submit-btn" style="width:100%;">📤 Kirim Bukti Pembayaran Sekarang</button>' +
+        '</form>' +
+      '</div>';
+
+    const fileInp = hostEl.querySelector('.proof-file-inp');
+    const prevWrap = hostEl.querySelector('.proof-local-preview');
+    const prevImg = prevWrap ? prevWrap.querySelector('img') : null;
+
+    fileInp.onchange = function () {
+      const f = fileInp.files && fileInp.files[0];
+      if (!f || !prevWrap || !prevImg) return;
+      if (f.type.indexOf('image/') === 0) {
+        const rd = new FileReader();
+        rd.onload = function () { prevImg.src = rd.result; prevWrap.classList.remove('hidden'); };
+        rd.readAsDataURL(f);
+      } else {
+        prevWrap.classList.add('hidden');
+      }
+    };
+
+    hostEl.querySelector('.form-public-proof').onsubmit = function (ev) {
+      ev.preventDefault();
+      const f = fileInp.files && fileInp.files[0];
+      if (!f) { toast('Pilih berkas bukti pembayaran terlebih dahulu.', 'err'); return; }
+      if (f.size > 5 * 1024 * 1024) { toast('Ukuran berkas melebihi 5 MB. Kompres atau potong screenshot terlebih dahulu.', 'err'); return; }
+
+      const fd = new FormData(ev.target);
+      const metode = String(fd.get('metode_bayar') || 'Transfer Bank');
+      const catBayar = String(fd.get('catatan_bayar') || '').trim();
+      const btn = hostEl.querySelector('.proof-submit-btn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Mengunggah bukti ke server aman...';
+
+      const reader = new FileReader();
+      reader.onload = async function () {
+        const base64 = String(reader.result || '').split(',')[1] || '';
+        try {
+          const res = await apiCall('uploadPublicPaymentProof', {
+            payload: {
+              orderId: ord.id_pesanan,
+              wa: ord.no_whatsapp,
+              metode_bayar: metode,
+              catatan_bayar: catBayar,
+              base64: base64,
+              mime: f.type || 'image/jpeg',
+              filename: f.name || 'bukti.jpg'
+            }
+          }, 'POST');
+
+          if (res && res.success) {
+            ord.has_bukti = true;
+            ord.metode_bayar = metode;
+            if (res.data && res.data.order) Object.assign(ord, res.data.order);
+            saveMyLocalOrder(ord);
+            toast(res.message || 'Bukti pembayaran berhasil dikirim!', 'ok');
+            sayMascot('Bukti bayar diterima! Admin segera memverifikasi 🎉', 3800);
+
+            hostEl.innerHTML =
+              '<div style="background:var(--wa-soft);border:1.5px solid rgba(16,185,129,0.45);border-radius:14px;padding:18px;text-align:center;">' +
+                '<div style="font-size:1.8rem;margin-bottom:4px;">✅</div>' +
+                '<h4 style="margin:0 0 6px;color:#059669;">Bukti Pembayaran Berhasil Terkirim!</h4>' +
+                '<p style="margin:0 0 12px;font-size:0.83rem;color:var(--text);">Tim Admin kami sedang memverifikasi pembayaran pesanan <strong>' + esc(ord.id_pesanan) + '</strong>. Kunci lisensi &amp; faktur resmi dapat Anda ambil kapan saja melalui menu <strong>💳 Cek Pesanan</strong> di bagian atas halaman.</p>' +
+                '<a href="' + esc(buildCustomerWaConfirmUrl(ord, 'Saya baru saja mengunggah bukti pembayaran (' + metode + ') di website.')) + '" target="_blank" rel="noopener" class="btn btn-wa btn-sm">💬 Beri Tahu Admin di WhatsApp (Opsional)</a>' +
+              '</div>';
+            if (onUploaded) onUploaded(ord);
+          } else if (res && /tidak dikenal/i.test(String(res.message || ''))) {
+            btn.disabled = false;
+            btn.textContent = '📤 Kirim Bukti Pembayaran Sekarang';
+            toast('Mengarahkan ke WhatsApp Admin untuk pengiriman lampiran bukti...', 'info');
+            window.open(buildCustomerWaConfirmUrl(ord, 'Saya sudah membayar via ' + metode + ' dan ingin melampirkan bukti transfer di chat ini.'), '_blank', 'noopener');
+          } else {
+            btn.disabled = false;
+            btn.textContent = '📤 Kirim Bukti Pembayaran Sekarang';
+            toast((res && res.message) || 'Gagal mengunggah berkas, silakan kirim via tombol WhatsApp.', 'err');
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = '📤 Kirim Bukti Pembayaran Sekarang';
+          toast('Jaringan sedang sibuk, silakan kirim bukti via tombol WhatsApp.', 'err');
+        }
+      };
+      reader.readAsDataURL(f);
+    };
+  }
+
+  function openPaymentInstructionModal(ord, isSubmittingAsync) {
+    _activeCheckoutOrd = ord;
+    const pay = getEffectivePaymentSettings();
+    let items = [];
+    try { items = JSON.parse(ord.item_json || '[]'); } catch (e) { items = []; }
+
+    $('mpc-title').textContent = '💳 Tagihan & Pembayaran Pesanan #' + ord.id_pesanan;
+    const body = $('mpc-body');
+    body.innerHTML =
+      '<div class="pay-summary-banner">' +
+        '<div>' +
+          '<span id="mpc-sync-pill" class="pill ' + (isSubmittingAsync ? 'pill-Diproses' : 'pill-Lunas') + '">' +
+            (isSubmittingAsync ? '⏳ Menyimpan pesanan ke database...' : '✓ Tercatat Resmi di Sistem') +
+          '</span>' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">' +
+            '<span style="font-size:1.1rem;font-weight:800;" class="tabular">ID: ' + esc(ord.id_pesanan) + '</span>' +
+            '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(ord.id_pesanan) + '" data-copy-lbl="ID Pesanan">📋 Salin ID</button>' +
+          '</div>' +
+          '<div style="font-size:0.79rem;color:#CBD5E1;margin-top:4px;">Pemesan: <strong>' + esc(ord.nama_pelanggan) + '</strong> (+' + esc(ord.no_whatsapp) + ') • Batas Bayar: ' + esc(pay.batas_bayar_jam) + ' Jam</div>' +
+        '</div>' +
+        '<div style="text-align:right;">' +
+          '<div style="font-size:0.74rem;color:#93C5FD;text-transform:uppercase;font-weight:700;">Total Tagihan</div>' +
+          '<div class="tabular" style="font-size:1.55rem;font-weight:800;color:#FFFFFF;">Rp ' + rupiah(ord.total_harga) + '</div>' +
+          '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(Math.round(Number(ord.total_harga) || 0)) + '" data-copy-lbl="Nominal pembayaran" style="margin-top:4px;">📋 Salin Nominal</button>' +
+        '</div>' +
+      '</div>' +
+
+      (items.length ? '<div style="background:var(--surface-2);border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:0.83rem;">' +
+        '<div style="font-weight:700;margin-bottom:4px;color:var(--muted);">Rincian Item Pesanan:</div>' +
+        items.map(function (it) {
+          return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;"><span>' + esc(it.nama) + ' × ' + it.qty + '</span><strong class="tabular">Rp ' + rupiah(it.subtotal || (it.harga * it.qty)) + '</strong></div>';
+        }).join('') +
+      '</div>' : '') +
+
+      '<div id="mpc-pay-methods-host">' + renderPaymentMethodPanelsHtml(ord, 'bank') + '</div>' +
+
+      '<div id="mpc-proof-upload-host" style="margin-bottom:16px;"></div>' +
+
+      '<div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px;">' +
+        '<a href="' + esc(buildCustomerWaConfirmUrl(ord, '')) + '" target="_blank" rel="noopener" class="btn btn-wa" style="text-align:center;">💬 Konfirmasi / Tanya via WhatsApp</a>' +
+        '<button type="button" class="btn btn-outline" id="mpc-go-tracker-btn">🔍 Buka Menu Cek Pesanan</button>' +
+      '</div>';
+
+    body.querySelectorAll('.pay-summary-banner [data-copy-val]').forEach(function (btn) {
+      btn.onclick = function () { copyText(btn.getAttribute('data-copy-val'), btn.getAttribute('data-copy-lbl')); };
+    });
+    bindPaymentMethodTabs($('mpc-pay-methods-host'));
+    renderProofUploadWidget($('mpc-proof-upload-host'), ord);
+
+    $('mpc-go-tracker-btn').onclick = function () {
+      closeOverlay('modal-payment-checkout');
+      openOrderTrackerModal(ord.id_pesanan, ord.no_whatsapp);
+    };
+
+    openOverlay('modal-payment-checkout');
+  }
+
+  // ── OPSI 2: PORTAL CEK STATUS PESANAN, KONFIRMASI BAYAR & AMBIL LISENSI ────
+  function openOrderTrackerModal(prefillOrderId, prefillWa) {
+    const recent = Array.isArray(STATE.myOrders) ? STATE.myOrders : [];
+    const defaultWa = prefillWa || (recent[0] ? recent[0].no_whatsapp : '');
+    const defaultId = prefillOrderId || '';
+
+    const body = $('mot-body');
+    body.innerHTML =
+      (recent.length ? '<div style="margin-bottom:16px;">' +
+        '<div style="font-size:0.78rem;font-weight:700;color:var(--muted);margin-bottom:8px;">⚡ Pesanan Terakhir Anda di Perangkat Ini (Klik untuk Cek Instan):</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          recent.slice(0, 5).map(function (ro) {
+            return '<button type="button" class="my-order-chip" data-quick-trk-id="' + esc(ro.id_pesanan) + '" data-quick-trk-wa="' + esc(ro.no_whatsapp) + '">' +
+              '<span>🧾 ' + esc(ro.id_pesanan) + '</span>' +
+              '<span style="color:var(--primary);">Rp ' + rupiah(ro.total_harga) + '</span>' +
+            '</button>';
+          }).join('') +
+        '</div>' +
+      '</div>' : '') +
+
+      '<form id="form-track-public-order" class="pay-box-card" style="margin-bottom:18px;">' +
+        '<div class="form-grid-2">' +
+          '<div class="field" style="margin-bottom:10px;">' +
+            '<label>Nomor WhatsApp Pemesan *</label>' +
+            '<input type="tel" id="trk-input-wa" class="input" required placeholder="Contoh: 08123456789" value="' + esc(defaultWa) + '">' +
+          '</div>' +
+          '<div class="field" style="margin-bottom:10px;">' +
+            '<label>ID Pesanan (Opsional — kosongkan untuk semua)</label>' +
+            '<input type="text" id="trk-input-id" class="input" placeholder="Contoh: ORD-20261101-XXXX" value="' + esc(defaultId) + '">' +
+          '</div>' +
+        '</div>' +
+        '<button type="submit" class="btn btn-primary" id="btn-run-track" style="width:100%;">🔍 Cek Status Pesanan &amp; Pembayaran</button>' +
+      '</form>' +
+      '<div id="trk-results-host"></div>';
+
+    body.querySelectorAll('[data-quick-trk-id]').forEach(function (chip) {
+      chip.onclick = function () {
+        $('trk-input-id').value = chip.getAttribute('data-quick-trk-id');
+        $('trk-input-wa').value = chip.getAttribute('data-quick-trk-wa');
+        executePublicOrderLookup();
+      };
+    });
+
+    $('form-track-public-order').onsubmit = function (ev) {
+      ev.preventDefault();
+      executePublicOrderLookup();
+    };
+
+    openOverlay('modal-order-tracker');
+    if (defaultWa) executePublicOrderLookup();
+  }
+
+  async function executePublicOrderLookup() {
+    const rawWa = $('trk-input-wa') ? $('trk-input-wa').value.trim() : '';
+    const rawId = $('trk-input-id') ? $('trk-input-id').value.trim().toUpperCase() : '';
+    const cleanWa = normPhone(rawWa);
+    const host = $('trk-results-host');
+    if (!host) return;
+
+    if (!/^628\d{7,12}$/.test(cleanWa)) {
+      toast('Masukkan Nomor WhatsApp pemesan yang valid (contoh: 08123456789).', 'err');
+      return;
+    }
+
+    const btn = $('btn-run-track');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Memeriksa status terbaru di server...'; }
+    host.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);">Memuat data pesanan...</div>';
+
+    let orders = [];
+    try {
+      const res = await apiCall('trackPublicOrder', { payload: { wa: cleanWa, orderId: rawId } }, 'POST');
+      if (res && res.success && res.data) {
+        if (res.data.paymentInfo) STATE.settings = Object.assign({}, STATE.settings, res.data.paymentInfo);
+        orders = Array.isArray(res.data.orders) ? res.data.orders : [];
+        orders.forEach(saveMyLocalOrder);
+      } else if (res && /tidak dikenal/i.test(String(res.message || ''))) {
+        // Fallback anggun bila backend GAS belum di-deploy ke versi terbaru
+        orders = (STATE.myOrders || []).filter(function (o) {
+          if (normPhone(o.no_whatsapp) !== cleanWa) return false;
+          if (rawId && String(o.id_pesanan).toUpperCase() !== rawId) return false;
+          return true;
+        });
+      } else if (res && !res.success) {
+        toast(res.message || 'Gagal memuat pesanan.', 'err');
+      }
+    } catch (e) {
+      orders = (STATE.myOrders || []).filter(function (o) {
+        if (normPhone(o.no_whatsapp) !== cleanWa) return false;
+        if (rawId && String(o.id_pesanan).toUpperCase() !== rawId) return false;
+        return true;
+      });
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Cek Status Pesanan & Pembayaran'; }
+    }
+
+    if (!orders.length) {
+      host.innerHTML =
+        '<div style="text-align:center;padding:28px 16px;background:var(--surface-2);border-radius:14px;">' +
+          '<div style="font-size:1.8rem;margin-bottom:6px;">🔎</div>' +
+          '<h4 style="margin:0 0 6px;">Belum Ditemukan Pesanan</h4>' +
+          '<p style="margin:0;font-size:0.84rem;color:var(--muted);">Pastikan Nomor WhatsApp sama persis dengan yang Anda masukkan saat memesan, atau kosongkan kolom ID Pesanan untuk menampilkan semua transaksi nomor tersebut.</p>' +
+        '</div>';
+      return;
+    }
+
+    renderTrackedOrderCards(host, orders);
+  }
+
+  function renderTrackedOrderCards(host, orders) {
+    host.innerHTML = orders.map(function (o, idx) {
+      const st = String(o.status_pesanan || 'Pending');
+      const isPaid = ['Lunas', 'Diproses', 'Selesai'].indexOf(st) >= 0;
+      const isDone = st === 'Selesai';
+      const hasBukti = !!o.has_bukti || isPaid;
+      const statusLabel = (st === 'Pending' && hasBukti) ? 'Menunggu Verifikasi Admin' : st;
+      const pillClass = (st === 'Pending' && hasBukti) ? 'pill-Diproses' : ('pill-' + st);
+
+      return '<div class="panel-card" style="margin-bottom:16px;" data-trk-card="' + idx + '">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border);">' +
+          '<div>' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+              '<strong class="tabular" style="font-size:1.05rem;">#' + esc(o.id_pesanan) + '</strong>' +
+              '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(o.id_pesanan) + '" data-copy-lbl="ID Pesanan">📋 Salin ID</button>' +
+              '<span class="pill ' + esc(pillClass) + '">' + esc(statusLabel) + '</span>' +
+            '</div>' +
+            '<div style="font-size:0.8rem;color:var(--muted);margin-top:4px;">' + esc(fmtDateShort(o.tanggal_order)) + ' • Pemesan: ' + esc(o.nama_pelanggan) + '</div>' +
+          '</div>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:0.75rem;color:var(--muted);">Total Tagihan</div>' +
+            '<strong class="tabular" style="font-size:1.2rem;color:var(--primary);">Rp ' + rupiah(o.total_harga) + '</strong>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="padding:10px 0 4px;font-size:0.88rem;"><strong>Produk / Layanan:</strong> ' + esc(o.nama_produk) + '</div>' +
+
+        (st !== 'Batal' ? '<div class="order-stepper">' +
+          '<div class="order-step-item is-done">1. Pesanan Dibuat</div>' +
+          '<div class="order-step-item ' + (hasBukti ? 'is-done' : 'is-current') + '">2. Bukti Bayar</div>' +
+          '<div class="order-step-item ' + (isPaid ? 'is-done' : (hasBukti ? 'is-current' : '')) + '">3. Diverifikasi Lunas</div>' +
+          '<div class="order-step-item ' + (isDone ? 'is-done' : (isPaid ? 'is-current' : '')) + '">4. Selesai &amp; Lisensi</div>' +
+        '</div>' : '<div class="pill pill-Batal" style="margin:10px 0;">Pesanan Dibatalkan</div>') +
+
+        (st === 'Pending' ? (
+          '<div class="trk-pay-methods-slot">' + renderPaymentMethodPanelsHtml(o, 'bank') + '</div>' +
+          (hasBukti
+            ? '<div style="background:var(--primary-soft);border:1px solid rgba(37,99,235,0.3);border-radius:12px;padding:13px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+                '<div style="font-size:0.83rem;"><strong>📎 Bukti Pembayaran Sudah Diterima!</strong><br><span style="color:var(--muted);">Tim Admin kami sedang memverifikasi pembayaran Anda.</span></div>' +
+                '<button type="button" class="btn btn-outline btn-sm btn-reupload-proof">Unggah Ulang Bukti</button>' +
+              '</div>' +
+              '<div class="trk-proof-slot hidden" style="margin-bottom:12px;"></div>'
+            : '<div class="trk-proof-slot" style="margin-bottom:12px;"></div>'
+          ) +
+          '<a href="' + esc(buildCustomerWaConfirmUrl(o, hasBukti ? 'Mohon bantuannya cek bukti pembayaran pesanan saya.' : '')) + '" target="_blank" rel="noopener" class="btn btn-wa btn-sm" style="width:100%;text-align:center;">💬 Hubungi / Konfirmasi ke WhatsApp Admin</a>'
+        ) : '') +
+
+        (isPaid ? (
+          '<div style="background:var(--wa-soft);border:1px solid rgba(16,185,129,0.35);border-radius:12px;padding:14px;margin-bottom:12px;">' +
+            '<div style="font-weight:800;color:#059669;margin-bottom:6px;">✅ Pembayaran Terverifikasi (' + esc(st) + ')</div>' +
+            (o.kunci_lisensi
+              ? '<div style="background:var(--surface);padding:10px 12px;border-radius:10px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;">' +
+                  '<div><div style="font-size:0.74rem;color:var(--muted);font-weight:700;">🔑 KUNCI LISENSI / KODE AKSES RESMI:</div><code style="font-size:0.95rem;font-weight:800;color:var(--primary);">' + esc(o.kunci_lisensi) + '</code></div>' +
+                  '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(o.kunci_lisensi) + '" data-copy-lbl="Kunci Lisensi">📋 Salin Lisensi</button>' +
+                '</div>'
+              : '<div style="font-size:0.82rem;color:var(--muted);">Pesanan sedang disiapkan oleh tim teknis kami. Kunci lisensi / akses produk akan segera muncul di halaman ini begitu berstatus <strong>Selesai</strong>.</div>'
+            ) +
+          '</div>' +
+          '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+            '<button type="button" class="btn btn-primary btn-sm btn-cust-invoice" data-inv-idx="' + idx + '">🧾 Lihat &amp; Cetak Faktur Resmi (PDF)</button>' +
+            '<a href="' + esc(buildCustomerWaConfirmUrl(o, 'Halo Admin, saya ingin menanyakan progres/panduan pesanan saya.')) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm">💬 Bantuan Teknis via WA</a>' +
+          '</div>'
+        ) : '') +
+      '</div>';
+    }).join('');
+
+    host.querySelectorAll('[data-trk-card]').forEach(function (cardEl) {
+      const idx = Number(cardEl.getAttribute('data-trk-card'));
+      const ord = orders[idx];
+      cardEl.querySelectorAll('[data-copy-val]').forEach(function (b) {
+        b.onclick = function () { copyText(b.getAttribute('data-copy-val'), b.getAttribute('data-copy-lbl')); };
+      });
+      const pmSlot = cardEl.querySelector('.trk-pay-methods-slot');
+      if (pmSlot) bindPaymentMethodTabs(pmSlot);
+
+      const proofSlot = cardEl.querySelector('.trk-proof-slot');
+      if (proofSlot && !proofSlot.classList.contains('hidden')) {
+        renderProofUploadWidget(proofSlot, ord, function () { executePublicOrderLookup(); });
+      }
+      const reBtn = cardEl.querySelector('.btn-reupload-proof');
+      if (reBtn && proofSlot) {
+        reBtn.onclick = function () {
+          proofSlot.classList.toggle('hidden');
+          if (!proofSlot.innerHTML) renderProofUploadWidget(proofSlot, ord, function () { executePublicOrderLookup(); });
+        };
+      }
+      const invBtn = cardEl.querySelector('.btn-cust-invoice');
+      if (invBtn) {
+        invBtn.onclick = function () { openCustomerInvoiceModal(ord); };
+      }
+    });
+  }
+
+  function openCustomerInvoiceModal(o) {
+    if (!o) return;
+    const st = STATE.settings || {};
+    const sig = o.invoiceSig || 'VERIFIED';
+    const verifyText = (RAW_GAS_URL ? RAW_GAS_URL + '?action=verifyInvoice&orderId=' + encodeURIComponent(o.id_pesanan) + '&sig=' + encodeURIComponent(sig) : 'NUSASTORE-OFFICIAL-' + o.id_pesanan + '-' + sig);
+    const qrImgUrl = 'https://quickchart.io/qr?size=130&text=' + encodeURIComponent(verifyText);
+
+    $('mae-title').textContent = '🧾 Faktur Pembelian Resmi — ' + o.id_pesanan;
+    $('mae-body').innerHTML =
+      '<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">' +
+        '<button type="button" class="btn btn-primary btn-sm" id="btn-cust-inv-print">🖨️ Cetak / Simpan PDF</button>' +
+      '</div>' +
+      '<div id="invoice-print-area" class="invoice-sheet">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F172A;padding-bottom:18px;margin-bottom:20px;">' +
+          '<div>' +
+            '<h2 style="margin:0;color:#2563EB;font-size:1.5rem;">' + esc(st.nama_toko || 'NusaStore') + '</h2>' +
+            '<div style="font-weight:700;font-size:0.9rem;">' + esc(st.nama_perusahaan || DEMO_DB.settings.nama_perusahaan) + '</div>' +
+            '<div style="font-size:0.78rem;color:#475569;max-width:340px;">' + esc(st.alamat_toko || DEMO_DB.settings.alamat_toko) + '</div>' +
+            ((st.npwp || DEMO_DB.settings.npwp) ? '<div style="font-size:0.76rem;color:#475569;">NPWP: ' + esc(st.npwp || DEMO_DB.settings.npwp) + '</div>' : '') +
+          '</div>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:1.3rem;font-weight:800;letter-spacing:0.06em;">INVOICE RESMI</div>' +
+            '<div style="font-size:0.86rem;font-weight:700;color:#2563EB;">#' + esc(o.id_pesanan) + '</div>' +
+            '<div style="font-size:0.78rem;color:#64748B;">Tanggal: ' + esc(fmtDateShort(o.tanggal_order)) + '</div>' +
+            '<div style="margin-top:6px;display:inline-block;padding:3px 10px;border-radius:99px;background:#ECFDF5;color:#059669;font-weight:800;font-size:0.75rem;">STATUS: ' + esc(String(o.status_pesanan).toUpperCase()) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="margin-bottom:18px;font-size:0.86rem;">' +
+          '<div style="color:#64748B;font-size:0.74rem;text-transform:uppercase;font-weight:700;">Ditagihkan Kepada:</div>' +
+          '<strong>' + esc(o.nama_pelanggan) + '</strong><br>WhatsApp: +' + esc(o.no_whatsapp) +
+        '</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:0.86rem;margin-bottom:20px;">' +
+          '<thead><tr style="background:#0F172A;color:#FFF;"><th style="padding:10px;text-align:left;">Deskripsi Produk / Layanan</th><th style="padding:10px;text-align:center;">Qty</th><th style="padding:10px;text-align:right;">Subtotal</th></tr></thead>' +
+          '<tbody><tr>' +
+            '<td style="padding:12px 10px;border-bottom:1px solid #E2E8F0;"><strong>' + esc(o.nama_produk) + '</strong>' +
+              (o.kunci_lisensi ? '<br><small style="color:#2563EB;">Lisensi Resmi: ' + esc(o.kunci_lisensi) + '</small>' : '') + '</td>' +
+            '<td style="padding:12px 10px;border-bottom:1px solid #E2E8F0;text-align:center;">' + esc(o.qty || 1) + '</td>' +
+            '<td style="padding:12px 10px;border-bottom:1px solid #E2E8F0;text-align:right;font-weight:700;">Rp ' + rupiah(o.total_harga) + '</td>' +
+          '</tr></tbody>' +
+        '</table>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;padding-top:12px;">' +
+          '<div style="display:flex;align-items:center;gap:12px;">' +
+            '<img src="' + esc(qrImgUrl) + '" width="88" height="88" alt="QR Verifikasi" style="border:1px solid #E2E8F0;border-radius:8px;padding:4px;">' +
+            '<div style="font-size:0.74rem;color:#475569;">' +
+              '<strong>Terverifikasi Kriptografis (HMAC)</strong><br>Signature: <code>' + esc(sig) + '</code>' +
+            '</div>' +
+          '</div>' +
+          '<div style="text-align:right;">' +
+            '<div style="font-size:0.8rem;color:#64748B;">Total Pembayaran</div>' +
+            '<div style="font-size:1.5rem;font-weight:800;color:#0F172A;">Rp ' + rupiah(o.total_harga) + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    $('btn-cust-inv-print').onclick = function () { window.print(); };
+    openOverlay('modal-admin-editor');
   }
 
   // ── TESTIMONI INTERAKTIF: 3D AUTO-FLIP + HOVER GLOW + POP-UP LENGKAP ───────
@@ -1886,6 +2561,7 @@
                 return '<option value="' + st + '"' + (o.status_pesanan === st ? ' selected' : '') + '>' + st + '</option>';
               }).join('') +
             '</select>' +
+            (o.link_bukti_transfer ? '<div style="margin-top:4px;"><span class="pill pill-Diproses" style="font-size:0.68rem;">📎 Bukti Masuk</span></div>' : '') +
           '</td>' +
           '<td><div style="display:flex;gap:6px;">' +
             '<button type="button" class="btn btn-outline btn-sm" data-open-order="' + esc(o.id_pesanan) + '">Detail</button>' +
@@ -1961,9 +2637,59 @@
     bindOrderTableActions(host);
   }
 
+  // ── OPSI 3: RENDER PESAN WA MANUAL & HYBRID FALLBACK DI SISI ADMIN ─────────
+  function renderOrderWaTextClient(o, tplKey) {
+    const st = STATE.settings || {};
+    let items = [];
+    try { items = JSON.parse(o.item_json || '[]'); } catch (e) { items = []; }
+    const daftarItem = items.length
+      ? items.map(function (i) { return '- ' + i.nama + ' x' + i.qty + ' = Rp ' + rupiah(i.subtotal || (i.harga * i.qty)); }).join('\n')
+      : ('- ' + (o.nama_produk || 'Produk') + ' = Rp ' + rupiah(o.total_harga));
+
+    const portalUrl = window.location.origin + window.location.pathname;
+    const vars = {
+      nama: o.nama_pelanggan || 'Kak',
+      id_pesanan: o.id_pesanan || '',
+      produk: o.nama_produk || '',
+      total: rupiah(o.total_harga),
+      status: o.status_pesanan || 'Pending',
+      tanggal: fmtDateShort(o.tanggal_order),
+      nama_toko: st.nama_toko || DEMO_DB.settings.nama_toko || 'NusaStore',
+      rekening: st.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
+      link_qris: st.link_qris || ('Cek menu Cek Pesanan di ' + portalUrl + ' atau balas pesan ini untuk gambar QRIS resmi.'),
+      batas_bayar_jam: st.batas_bayar_jam || '24',
+      kunci_lisensi: o.kunci_lisensi || '(Segera diaktifkan / cek menu Cek Pesanan di website)',
+      link_invoice: portalUrl,
+      catatan: o.catatan || '-',
+      no_wa: o.no_whatsapp || '',
+      daftar_item: daftarItem
+    };
+
+    const rawTpl = st[tplKey] || DEMO_DB.settings[tplKey] || 'Halo Kak *{nama}*, berikut informasi pesanan *{id_pesanan}* ({produk}) senilai *Rp {total}*.';
+    return String(rawTpl).split('\n').map(function (line) {
+      return line.replace(/\{(\w+)\}/g, function (m, k) {
+        return Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m;
+      });
+    }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function openManualWaForOrder(o, tplKey, customText) {
+    const cleanTarget = normPhone(o.no_whatsapp);
+    if (!cleanTarget) { toast('Nomor WhatsApp pelanggan kosong.', 'err'); return; }
+    const msg = customText !== undefined ? customText : renderOrderWaTextClient(o, tplKey);
+    window.open('https://wa.me/' + cleanTarget + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+    toast('Membuka WhatsApp ke +' + cleanTarget + ' dengan draf pesan siap kirim!', 'ok');
+  }
+
   function openOrderDetailDrawer(orderId) {
     const o = (STATE.adminData.orders || []).find(function (x) { return x.id_pesanan === orderId; });
     if (!o) return;
+    const hasFonnte = Boolean(
+      (STATE.adminData.secrets && STATE.adminData.secrets.fonnte && STATE.adminData.secrets.fonnte.ada) ||
+      (STATE.adminData.notifCrm && STATE.adminData.notifCrm.config && STATE.adminData.notifCrm.config.fonnteAda)
+    );
+    const proofThumb = o.link_bukti_transfer ? driveImgClient(o.link_bukti_transfer) : '';
+
     $('dad-title').textContent = 'Pesanan ' + o.id_pesanan;
     $('dad-foot').classList.add('hidden');
     $('dad-body').innerHTML =
@@ -1987,18 +2713,44 @@
         '<hr style="border:none;border-top:1px solid var(--border);margin:6px 0;">' +
         '<h4 style="margin:0;font-size:0.92rem;">📎 Bukti Transfer (Google Drive)</h4>' +
         (o.link_bukti_transfer
-          ? '<a href="' + esc(o.link_bukti_transfer) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm">🔍 Buka Berkas Bukti Transfer</a>'
-          : '<small style="color:var(--muted);">Belum ada bukti transfer diunggah.</small>') +
+          ? '<div style="background:var(--surface-2);padding:10px;border-radius:12px;border:1px solid var(--border);display:grid;gap:8px;">' +
+              '<img src="' + esc(proofThumb) + '" alt="Bukti Bayar" style="max-height:160px;width:100%;object-fit:contain;border-radius:8px;background:var(--surface);cursor:pointer;" id="od-proof-img-preview" onerror="this.style.display=\'none\'">' +
+              '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                '<button type="button" class="btn btn-outline btn-sm" id="od-zoom-proof-btn" style="flex:1;">🔍 Perbesar Bukti</button>' +
+                '<a href="' + esc(o.link_bukti_transfer) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">🔗 Buka Drive</a>' +
+              '</div>' +
+              (o.status_pesanan === 'Pending'
+                ? '<button type="button" class="btn btn-wa btn-sm" id="od-verify-lunas-btn" style="width:100%;">✅ Verifikasi Pembayaran Lunas (1-Klik)</button>'
+                : '') +
+            '</div>'
+          : '<small style="color:var(--muted);">Belum ada bukti transfer diunggah pelanggan.</small>') +
         '<input type="file" id="od-proof-file" accept="image/*,application/pdf" class="input" style="font-size:0.8rem;">' +
 
         '<hr style="border:none;border-top:1px solid var(--border);margin:6px 0;">' +
-        '<h4 style="margin:0;font-size:0.92rem;">💬 Kirim Pesan WhatsApp Fonnte (1-Klik)</h4>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
-          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_transfer">Tagihan Bank</button>' +
-          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_qris">Tagihan QRIS</button>' +
-          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_pengingat">Pengingat</button>' +
-          '<button type="button" class="btn btn-wa btn-sm" data-wa-tpl="template_pesan_selesai">Kirim Selesai</button>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">' +
+          '<h4 style="margin:0;font-size:0.92rem;">💬 Kirim Tagihan &amp; Info WhatsApp</h4>' +
+          (hasFonnte
+            ? '<span class="pill pill-Lunas" style="font-size:0.68rem;">🟢 Fonnte Otomatis Aktif</span>'
+            : '<span class="pill pill-Diproses" style="font-size:0.68rem;">📲 Mode WA Manual (Tanpa Token)</span>') +
         '</div>' +
+        '<small style="color:var(--muted);font-size:0.75rem;margin-top:-6px;">' +
+          (hasFonnte
+            ? 'Mengirim otomatis lewat API Fonnte (otomatis beralih ke WA Web bila koneksi Fonnte kendala).'
+            : 'Membuka aplikasi WhatsApp / WA Web langsung dengan pesan tagihan lengkap siap kirim (Gratis).') +
+        '</small>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_transfer">🏦 Tagihan Bank</button>' +
+          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_tagihan_qris">📱 Tagihan QRIS</button>' +
+          '<button type="button" class="btn btn-outline btn-sm" data-wa-tpl="template_pengingat">⏰ Pengingat</button>' +
+          '<button type="button" class="btn btn-wa btn-sm" data-wa-tpl="template_pesan_selesai">🎉 Kirim Selesai</button>' +
+        '</div>' +
+        (hasFonnte
+          ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">' +
+              '<button type="button" class="btn btn-ghost btn-sm" data-wa-manual="template_tagihan_transfer" style="font-size:0.74rem;border:1px dashed var(--border);">📲 WA Manual: Bank</button>' +
+              '<button type="button" class="btn btn-ghost btn-sm" data-wa-manual="template_pesan_selesai" style="font-size:0.74rem;border:1px dashed var(--border);">📲 WA Manual: Selesai</button>' +
+            '</div>'
+          : '') +
+        '<button type="button" class="btn btn-outline btn-sm" id="od-chat-direct-wa" style="width:100%;">📲 Buka Ruang Chat WA Pelanggan (+' + esc(o.no_whatsapp) + ')</button>' +
 
         '<div style="font-size:0.76rem;color:var(--muted);background:var(--surface-2);padding:10px;border-radius:10px;">' +
           '<strong>Riwayat Status:</strong><br>' + esc(o.riwayat_status || '-') +
@@ -2019,6 +2771,40 @@
       } else toast(res.message, 'err');
     };
 
+    const zoomBtn = $('od-zoom-proof-btn');
+    const prevImgEl = $('od-proof-img-preview');
+    if (zoomBtn && o.link_bukti_transfer) {
+      zoomBtn.onclick = function () { openProofLightbox(o.link_bukti_transfer, '📎 Bukti Pembayaran #' + o.id_pesanan); };
+    }
+    if (prevImgEl && o.link_bukti_transfer) {
+      prevImgEl.onclick = function () { openProofLightbox(o.link_bukti_transfer, '📎 Bukti Pembayaran #' + o.id_pesanan); };
+    }
+
+    const verBtn = $('od-verify-lunas-btn');
+    if (verBtn) {
+      verBtn.onclick = async function () {
+        verBtn.disabled = true;
+        verBtn.textContent = '⏳ Memverifikasi Lunas...';
+        const notify = STATE.settings.notif_otomatis_lunas === 'Ya';
+        const res = await apiCall('adminUpdateOrder', {
+          id: o.id_pesanan,
+          patch: { status_pesanan: 'Lunas' },
+          opts: { notify: notify }
+        }, 'POST');
+        if (res.success) {
+          if (res.data && res.data.order) Object.assign(o, res.data.order);
+          toast('Pesanan ' + o.id_pesanan + ' diverifikasi LUNAS!', 'ok');
+          updateTelemetryBar();
+          renderAdminActiveTab();
+          openOrderDetailDrawer(o.id_pesanan);
+        } else {
+          verBtn.disabled = false;
+          verBtn.textContent = '✅ Verifikasi Pembayaran Lunas (1-Klik)';
+          toast(res.message || 'Gagal memperbarui status.', 'err');
+        }
+      };
+    }
+
     $('od-proof-file').onchange = function (ev) {
       const file = ev.target.files && ev.target.files[0];
       if (!file) return;
@@ -2032,6 +2818,7 @@
         if (res.success) {
           if (res.data && res.data.order) Object.assign(o, res.data.order);
           toast('Bukti transfer berhasil disimpan ke Drive!', 'ok');
+          renderAdminActiveTab();
           openOrderDetailDrawer(o.id_pesanan);
         } else toast(res.message, 'err');
       };
@@ -2041,10 +2828,32 @@
     $('dad-body').querySelectorAll('[data-wa-tpl]').forEach(function (b) {
       b.onclick = async function () {
         const tpl = b.getAttribute('data-wa-tpl');
+        // Jika FONNTE_TOKEN belum dipasang, langsung buka WhatsApp Manual tanpa error!
+        if (!hasFonnte) {
+          openManualWaForOrder(o, tpl);
+          return;
+        }
         const res = await apiCall('adminSendWa', { orderId: o.id_pesanan, templateKey: tpl }, 'POST');
-        toast(res.message || 'Selesai', res.success ? 'ok' : 'err');
+        if (res && res.success && (!res.data || res.data.ok !== false)) {
+          toast(res.message || 'Pesan WhatsApp terkirim otomatis via Fonnte!', 'ok');
+        } else {
+          const reason = (res && res.data && res.data.detail) ? res.data.detail : ((res && res.message) || 'Fonnte belum siap');
+          toast('Fonnte kendala (' + reason + ') — mengalihkan ke WhatsApp Manual...', 'info');
+          openManualWaForOrder(o, tpl);
+        }
       };
     });
+
+    $('dad-body').querySelectorAll('[data-wa-manual]').forEach(function (b) {
+      b.onclick = function () {
+        openManualWaForOrder(o, b.getAttribute('data-wa-manual'));
+      };
+    });
+
+    $('od-chat-direct-wa').onclick = function () {
+      const sapaan = 'Halo Kak *' + (o.nama_pelanggan || '') + '*, kami dari *' + (STATE.settings.nama_toko || 'NusaStore') + '* terkait pesanan *' + o.id_pesanan + '* (' + o.nama_produk + '). Ada yang bisa kami bantu?';
+      openManualWaForOrder(o, '', sapaan);
+    };
 
     $('od-del-btn').onclick = async function () {
       if (!confirm('Hapus permanen pesanan ' + o.id_pesanan + '?')) return;
@@ -3395,6 +4204,14 @@
     }
 
     // Header & Footer Drawer / Modal triggers
+    const openTrackerFn = function () {
+      if ($('wa-chat-card')) $('wa-chat-card').classList.add('hidden');
+      openOrderTrackerModal('', '');
+    };
+    if ($('btn-open-order-tracker')) $('btn-open-order-tracker').onclick = openTrackerFn;
+    if ($('top-open-tracker')) $('top-open-tracker').onclick = openTrackerFn;
+    if ($('ft-open-tracker')) $('ft-open-tracker').onclick = openTrackerFn;
+    if ($('wa-open-tracker-btn')) $('wa-open-tracker-btn').onclick = openTrackerFn;
     if ($('btn-open-cart')) $('btn-open-cart').onclick = function () { openCartDrawer('cart'); };
     if ($('ft-open-cart')) $('ft-open-cart').onclick = function () { openCartDrawer('cart'); };
     if ($('btn-open-wishlist')) $('btn-open-wishlist').onclick = function () { openCartDrawer('wish'); };
