@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>NusaStore — Solusi Produk Digital, Otomasi WhatsApp & Perangkat Enterprise</title>
+  <meta name="description" content="Katalog resmi produk digital, template web, otomasi WhatsApp Fonnte, CRM bisnis, dan perangkat kerja bergaransi resmi dengan checkout instan WhatsApp.">
+  <meta property="og:title" content="NusaStore — Enterprise Digital Storefront">
+  <meta property="og:description" content="Checkout instan via WhatsApp, database real-time, pengiriman lisensi & faktur resmi otomatis.">
+  <meta property="og:type" content="website">
+
+  <!-- Google Fonts: Plus Jakarta Sans + Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Tumpukan Notifikasi Toast -->
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+
+  <!-- Pita Info Mode Pratinjau Lokal (otomatis tersembunyi begitu GAS_URL diisi) -->
+  <div id="demo-mode-banner" class="demo-banner hidden">
+    <span>⚡ <strong>Mode Simulasi Lokal Aktif</strong> (<code>js/config.js → GAS_URL</code> belum diisi). Seluruh fitur interaktif dapat diuji langsung — PIN Sesi Uji Admin: <code id="demo-pin-display">------</code></span>
+  </div>
+
+  <!-- ========================================================================
+       VIEW 1: PUBLIC STOREFRONT LANDING PAGE
+       ======================================================================== -->
+  <div id="view-storefront">
+    <!-- Top Promo Bar -->
+    <div class="topbar">
+      <div class="container topbar-inner">
+        <div class="topbar-promo">
+          <span class="live-dot"></span>
+          <span id="ui-promo-topbar">Cloud Server Licensing &amp; Web Solutions Flash Sale — Hemat hingga 45% Hari Ini!</span>
+        </div>
+        <div class="topbar-actions">
+          <button type="button" class="topbar-link" id="btn-open-review-form">✨ Tulis Testimoni</button>
+          <button type="button" class="topbar-link" id="btn-open-admin">🔐 Admin Portal</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sticky Header -->
+    <header class="site-header">
+      <div class="container header-inner">
+        <a href="#top" class="brand" id="brand-home-link">
+          <div class="brand-mark">N</div>
+          <div>
+            <div class="brand-name" id="ui-brand-name">NusaStore</div>
+            <div class="brand-sub" id="ui-brand-tagline">Enterprise Digital</div>
+          </div>
+        </a>
+
+        <div class="search-box">
+          <select id="search-cat-select" aria-label="Pilih Kategori">
+            <option value="ALL">Semua Kategori</option>
+          </select>
+          <input type="search" id="search-input" placeholder="Cari template web, otomasi WA, laptop kerja..." autocomplete="off">
+          <button type="button" class="search-btn" id="search-submit-btn" aria-label="Cari">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          </button>
+          <div id="search-suggest" class="search-suggest hidden"></div>
+        </div>
+
+        <div class="header-tools">
+          <button type="button" class="icon-btn" id="btn-theme-toggle" title="Ganti Tema Terang/Gelap" aria-label="Ganti Tema">
+            <svg id="icon-sun" class="hidden" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg id="icon-moon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+
+          <button type="button" class="icon-btn" id="btn-open-wishlist" title="Produk Favorit" aria-label="Favorit">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <span id="wish-badge" class="badge-count hidden">0</span>
+          </button>
+
+          <button type="button" class="icon-btn" id="btn-open-cart" title="Keranjang Belanja" aria-label="Keranjang">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            <span id="cart-badge" class="badge-count hidden">0</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- HERO SECTION AUTO-SLIDESHOW -->
+    <section id="top" class="hero-section">
+      <div class="hero-grid-bg"></div>
+      <div class="container">
+        <div id="hero-carousel" class="hero-carousel">
+          <div id="hero-slides-host"></div>
+          <div class="hero-controls">
+            <div id="hero-dots" class="hero-dots"></div>
+            <div class="hero-arrows">
+              <button type="button" class="hero-arrow" id="hero-prev" aria-label="Slide Sebelumnya">&#8592;</button>
+              <button type="button" class="hero-arrow" id="hero-next" aria-label="Slide Berikutnya">&#8594;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SHOP BY CATEGORY -->
+    <section class="section reveal">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-eyebrow">Ekosistem Solusi</span>
+            <h2 class="section-title">Jelajahi Berdasarkan Kategori</h2>
+            <p class="section-desc">Pilih lini produk digital, otomasi WhatsApp, atau perangkat kerja sesuai kebutuhan bisnis Anda.</p>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="btn-reset-cat">Tampilkan Semua</button>
+        </div>
+        <div id="cat-grid" class="cat-grid"></div>
+      </div>
+    </section>
+
+    <!-- PROMOTIONAL FLASH OFFER BANNER -->
+    <section class="container reveal" style="margin-bottom: 12px;">
+      <div class="flash-banner">
+        <div style="position:relative;z-index:2;max-width:640px;">
+          <span class="hero-pill" style="margin-bottom:10px;">⚡ PENAWARAN BUNDLING EKSKLUSIF</span>
+          <h2 style="font-size:clamp(1.4rem,2.4vw,2rem);margin-bottom:8px;">Hemat Ekstra hingga <span id="ui-flash-diskon">30</span>% untuk Paket Toko Web + Otomasi WA Fonnte!</h2>
+          <p style="margin:0;color:#CBD5E1;font-size:0.93rem;">Dapatkan source code penuh, integrasi CRM pelanggan, antrean notifikasi otomatis, serta panduan deploy GitHub Pages bebas biaya bulanan.</p>
+        </div>
+        <div style="position:relative;z-index:2;display:flex;gap:12px;flex-wrap:wrap;">
+          <a href="#products" class="btn btn-wa btn-lg btn-shimmer">🔥 Klaim Promo Katalog</a>
+          <button type="button" class="btn hero-btn-glass btn-lg" id="btn-banner-consult">💬 Konsultasi Bundling</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- KATALOG PRODUK & JASA (MULTI-IMAGE SLIDESHOW + INTERACTIVE GLOW) -->
+    <section id="products" class="section reveal">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-eyebrow">Katalog Resmi Terpopuler</span>
+            <h2 class="section-title">Produk Digital, Jasa &amp; Perangkat Pilihan</h2>
+            <p class="section-desc">Arahkan kursor untuk melihat kilau detail atau klik kartu untuk pratinjau galeri lengkap &amp; checkout instan.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <select id="sort-select" class="select" style="width:auto;padding:8px 14px;font-size:0.84rem;">
+              <option value="featured">Urutan Unggulan</option>
+              <option value="price-asc">Harga: Terendah → Tertinggi</option>
+              <option value="price-desc">Harga: Tertinggi → Terendah</option>
+              <option value="rating">Rating Tertinggi</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="catalog-toolbar">
+          <div id="catalog-chips" class="chip-list"></div>
+          <div id="catalog-count" style="font-size:0.84rem;color:var(--muted);font-weight:600;"></div>
+        </div>
+
+        <div id="product-grid" class="product-grid"></div>
+      </div>
+    </section>
+
+    <!-- TESTIMONI INTERAKTIF (AUTO-FLIP 3D + HOVER GLOW + POP-UP DETAIL) -->
+    <section id="testimonials" class="section testi-section reveal">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-eyebrow">Dipercaya Ratusan Pebisnis</span>
+            <h2 class="section-title">Kisah Sukses &amp; Testimoni Terverifikasi</h2>
+            <p class="section-desc">Kartu berputar otomatis menampilkan metrik dampak nyata — arahkan kursor untuk menahan atau <strong>klik kartu</strong> untuk membaca cerita lengkap.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm btn-shimmer" id="btn-write-testi">✍️ Bagikan Ulasan Anda</button>
+        </div>
+
+        <div id="testi-grid" class="testi-grid"></div>
+      </div>
+    </section>
+
+    <!-- WHY CHOOSE NUSASTORE -->
+    <section class="section reveal">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <span class="section-eyebrow">Standar Keunggulan</span>
+            <h2 class="section-title">Mengapa Memilih Infrastruktur NusaStore?</h2>
+          </div>
+        </div>
+        <div class="usp-grid">
+          <div class="usp-card">
+            <div class="usp-icon">⚡</div>
+            <h4>Checkout WhatsApp 1-Klik</h4>
+            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Tanpa paksaan buat akun rumit. Pesanan terekam otomatis di Google Sheets sekaligus membuka ruang chat WhatsApp resmi.</p>
+          </div>
+          <div class="usp-card">
+            <div class="usp-icon">🛡️</div>
+            <h4>Keamanan Setara Enterprise</h4>
+            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Zero literal secrets, sesi HMAC kriptografis, proteksi Script Properties, serta faktur resmi PDF ber-QR verifikasi keaslian.</p>
+          </div>
+          <div class="usp-card">
+            <div class="usp-icon">🤖</div>
+            <h4>Notifikasi WA/Email &amp; CRM</h4>
+            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Antrean pengiriman non-blocking mengirim tagihan, konfirmasi lunas, dan kunci lisensi otomatis ke WhatsApp &amp; Email pelanggan.</p>
+          </div>
+          <div class="usp-card">
+            <div class="usp-icon">🚀</div>
+            <h4> Cepat, Bebas Biaya Server</h4>
+            <p style="font-size:0.86rem;color:var(--muted);margin:0;">Frontend statis ringan di CDN GitHub Pages dipadukan CacheX berlapis di Google Apps Script untuk respons super instan.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <div class="brand" style="margin-bottom:14px;">
+              <div class="brand-mark">N</div>
+              <div>
+                <div class="brand-name" style="color:#FFFFFF;" id="ft-brand-name">NusaStore</div>
+                <div class="brand-sub" id="ft-company-name">PT Nusa Digital Teknologi</div>
+              </div>
+            </div>
+            <p style="font-size:0.86rem;color:#94A3B8;margin-bottom:14px;">Mitra transformasi digital bisnis Indonesia. Menyediakan ekosistem e-commerce serverless, otomasi WhatsApp CRM, dan perangkat kerja resmi.</p>
+            <div style="font-size:0.82rem;color:#94A3B8;" id="ft-contact-info"></div>
+          </div>
+
+          <div>
+            <h4 style="color:#FFFFFF;font-size:0.95rem;margin-bottom:14px;">Kategori Utama</h4>
+            <ul class="footer-links" id="ft-cat-links"></ul>
+          </div>
+
+          <div>
+            <h4 style="color:#FFFFFF;font-size:0.95rem;margin-bottom:14px;">Navigasi Cepat</h4>
+            <ul class="footer-links">
+              <li><a href="#top">Beranda Utama</a></li>
+              <li><a href="#products">Katalog Produk &amp; Jasa</a></li>
+              <li><a href="#testimonials">Testimoni Pelanggan</a></li>
+              <li><button type="button" id="ft-open-cart">Keranjang Belanja</button></li>
+              <li><button type="button" id="ft-open-admin">Portal Admin Toko</button></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 style="color:#FFFFFF;font-size:0.95rem;margin-bottom:8px;">Info Promo &amp; Rilis Produk</h4>
+            <p style="font-size:0.83rem;color:#94A3B8;margin:0;">Dapatkan voucher diskon eksklusif dan pembaruan modul bisnis langsung di inbox Anda.</p>
+            <form id="newsletter-form" class="nl-form">
+              <input type="email" id="nl-email-input" placeholder="nama@perusahaan.com" required>
+              <button type="submit" class="btn btn-primary btn-sm">Daftar</button>
+            </form>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding-top:24px;font-size:0.8rem;color:#64748B;">
+          <span>&copy; <span id="ft-year">2026</span> <span id="ft-copy-company">PT Nusa Digital Teknologi</span>. Seluruh hak cipta dilindungi.</span>
+          <span>Powered by Decoupled GitHub Pages + Google Apps Script ProAPI v3.0</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ========================================================================
+       VIEW 2: ADMIN PORTAL SPA
+       ======================================================================== -->
+  <div id="view-admin" class="admin-shell hidden">
+    <aside class="admin-sidebar">
+      <div class="brand" style="padding:6px 8px 16px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:8px;">
+        <div class="brand-mark">N</div>
+        <div>
+          <div class="brand-name" style="color:#FFFFFF;font-size:1.05rem;">NusaStore</div>
+          <div class="brand-sub" style="color:#38BDF8;">Admin Portal v3.0</div>
+        </div>
+      </div>
+
+      <button type="button" class="admin-nav-btn is-active" data-tab="overview">
+        <span>📊 Ringkasan &amp; Analitik</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="orders">
+        <span>🧾 Transaksi &amp; Faktur</span>
+        <span id="nav-badge-pending" class="pill pill-Pending hidden">0</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="catalog">
+        <span>📦 Katalog &amp; Testimoni</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="crm">
+        <span>👥 CRM &amp; Pelanggan</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="notif">
+        <span>💬 WA, Email &amp; Blast</span>
+        <span id="nav-badge-queue" class="pill pill-MENUNGGU hidden">0</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="licenses">
+        <span>🔑 License Vault</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="migrasi">
+        <span>🔄 Migrasi Database</span>
+      </button>
+      <button type="button" class="admin-nav-btn" data-tab="settings">
+        <span>⚙️ Pengaturan &amp; Keamanan</span>
+      </button>
+
+      <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);display:grid;gap:6px;">
+        <button type="button" class="admin-nav-btn" id="btn-back-storefront">🌐 Lihat Etalase Toko</button>
+        <button type="button" class="admin-nav-btn" id="btn-admin-logout" style="color:#FCA5A5;">🚪 Keluar Sesi Admin</button>
+      </div>
+    </aside>
+
+    <main class="admin-main">
+      <div class="admin-topbar">
+        <div>
+          <h2 id="admin-page-title" style="margin:0;font-size:1.4rem;">Ringkasan Penjualan &amp; Analitik</h2>
+          <small id="admin-telemetry" style="color:var(--muted);">Sinkron Real-Time • Latensi API: — ms</small>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <button type="button" class="btn btn-outline btn-sm" id="btn-admin-refresh">🔄 Segarkan Data</button>
+          <a id="btn-open-sheets" href="#" target="_blank" rel="noopener" class="btn btn-outline btn-sm hidden">📊 Buka Google Sheets</a>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-quick-manual-order">+ Input Order Manual</button>
+        </div>
+      </div>
+
+      <div id="admin-panel-host"></div>
+    </main>
+  </div>
+
+  <!-- ========================================================================
+       MODALS & DRAWERS
+       ======================================================================== -->
+
+  <!-- Modal Detail Produk + Galeri Multi-Gambar + Checkout Instan -->
+  <div id="modal-product" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-lg">
+      <div class="modal-head">
+        <h3 id="mp-title" style="margin:0;font-size:1.15rem;">Detail Produk</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-product">✕ Tutup</button>
+      </div>
+      <div id="mp-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal Pop-Up Detail Testimoni Lengkap -->
+  <div id="modal-testimoni-detail" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 style="margin:0;font-size:1.12rem;">🌟 Kisah Lengkap Pelanggan Terverifikasi</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-testimoni-detail">✕ Tutup</button>
+      </div>
+      <div id="mtd-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal Kirim Testimoni Publik -->
+  <div id="modal-testimoni-submit" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-sm">
+      <div class="modal-head">
+        <h3 style="margin:0;font-size:1.1rem;">✍️ Bagikan Pengalaman Anda</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-testimoni-submit">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-public-testi">
+          <input type="text" name="website" class="hp-trap" tabindex="-1" autocomplete="off">
+          <div class="field">
+            <label>Nama Lengkap *</label>
+            <input type="text" class="input" name="nama" required placeholder="Contoh: Budi Santoso">
+          </div>
+          <div class="field">
+            <label>Jabatan / Nama Bisnis</label>
+            <input type="text" class="input" name="jabatan_perusahaan" placeholder="Contoh: Owner • Toko Berkah Digital">
+          </div>
+          <div class="form-grid-2">
+            <div class="field">
+              <label>Produk yang Digunakan</label>
+              <select class="select" name="produk_terkait" id="testi-prod-select"></select>
+            </div>
+            <div class="field">
+              <label>Rating Kepuasan</label>
+              <select class="select" name="rating">
+                <option value="5">⭐⭐⭐⭐⭐ (5/5 Sempurna)</option>
+                <option value="4">⭐⭐⭐⭐ (4/5 Sangat Baik)</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Dampak / Hasil Singkat</label>
+            <input type="text" class="input" name="hasil_highlight" placeholder="Contoh: Omzet naik 60% & hemat waktu admin">
+          </div>
+          <div class="field">
+            <label>Kutipan Singkat *</label>
+            <textarea class="textarea" name="kutipan_singkat" rows="2" required placeholder="Kesan utama Anda dalam 1–2 kalimat..."></textarea>
+          </div>
+          <div class="field">
+            <label>Cerita Lengkap (Opsional)</label>
+            <textarea class="textarea" name="cerita_lengkap" rows="3" placeholder="Ceritakan pengalaman sebelum & sesudah memakai layanan NusaStore..."></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">🚀 Kirim Testimoni</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Laci Keranjang Belanja & Wishlist -->
+  <div id="drawer-cart" class="drawer-backdrop hidden">
+    <div class="drawer-panel">
+      <div class="modal-head">
+        <h3 id="drawer-cart-title" style="margin:0;font-size:1.1rem;">🛒 Keranjang Belanja</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="drawer-cart">✕</button>
+      </div>
+      <div id="drawer-cart-body" class="drawer-body"></div>
+      <div id="drawer-cart-foot" class="drawer-foot"></div>
+    </div>
+  </div>
+
+  <!-- Modal Login Admin (PIN 6 Digit + Tab Akses Darurat) -->
+  <div id="modal-admin-login" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-sm">
+      <div class="modal-head">
+        <h3 style="margin:0;font-size:1.1rem;">🔐 Autentikasi Admin Portal</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-admin-login">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <button type="button" class="filter-chip is-active" id="tab-login-pin" style="flex:1;">PIN 6 Digit</button>
+          <button type="button" class="filter-chip" id="tab-login-darurat" style="flex:1;">Akses Darurat</button>
+        </div>
+
+        <form id="form-login-pin">
+          <div class="field">
+            <label>Masukkan PIN Keamanan 6 Digit</label>
+            <input type="password" id="input-admin-pin" class="input" inputmode="numeric" maxlength="6" pattern="\d{6}" placeholder="••••••" style="text-align:center;font-size:1.5rem;letter-spacing:10px;font-weight:800;" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Masuk ke Dashboard</button>
+        </form>
+
+        <form id="form-login-darurat" class="hidden">
+          <div class="field">
+            <label>Username Darurat</label>
+            <input type="text" id="input-darurat-user" class="input" value="darurat" required>
+          </div>
+          <div class="field">
+            <label>Sandi Darurat (dari Log setupAppEnvironment)</label>
+            <input type="password" id="input-darurat-pass" class="input" placeholder="16 karakter acak" required>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Pulihkan Akses Admin</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Editor Serbaguna Admin & Cetak Faktur A4 -->
+  <div id="modal-admin-editor" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal-card modal-lg">
+      <div class="modal-head">
+        <h3 id="mae-title" style="margin:0;font-size:1.12rem;">Editor Data</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="modal-admin-editor">✕ Tutup</button>
+      </div>
+      <div id="mae-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Laci Detail Pesanan / Kontak CRM Admin -->
+  <div id="drawer-admin-detail" class="drawer-backdrop hidden">
+    <div class="drawer-panel">
+      <div class="modal-head">
+        <h3 id="dad-title" style="margin:0;font-size:1.08rem;">Detail</h3>
+        <button type="button" class="btn btn-ghost btn-sm" data-close="drawer-admin-detail">✕</button>
+      </div>
+      <div id="dad-body" class="drawer-body"></div>
+      <div id="dad-foot" class="drawer-foot hidden"></div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       FLOATING WHATSAPP CHAT WIDGET
+       ======================================================================== -->
+  <div id="wa-float-wrap" class="wa-float-wrap">
+    <div id="wa-chat-card" class="wa-chat-card hidden">
+      <div class="wa-chat-head">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.2);display:grid;place-items:center;font-weight:800;">CS</div>
+          <div>
+            <div style="font-weight:800;font-size:0.9rem;" id="wa-cs-title">Tim Support NusaStore</div>
+            <div style="font-size:0.72rem;opacity:0.9;">● Online • Balas dalam hitungan menit</div>
+          </div>
+        </div>
+        <button type="button" id="wa-chat-close" style="background:none;border:none;color:#FFFFFF;font-size:1.1rem;">✕</button>
+      </div>
+      <div class="wa-chat-body">
+        <div class="wa-bubble-msg" id="wa-greeting-text">
+          Halo Kak! 👋 Ada yang bisa tim NusaStore bantu hari ini? Pilih topik cepat atau ketik pesan di bawah ya.
+        </div>
+        <button type="button" class="wa-quick-topic" data-topic="Halo Tim NusaStore, saya ingin tanya detail produk & promo katalog hari ini.">🏷️ Tanya Detail Produk &amp; Diskon</button>
+        <button type="button" class="wa-quick-topic" data-topic="Halo Tim NusaStore, saya tertarik konsultasi pembuatan Web / Otomasi WhatsApp Bisnis.">💻 Konsultasi Custom Web &amp; Otomasi WA</button>
+        <button type="button" class="wa-quick-topic" data-topic="Halo Admin NusaStore, saya ingin konfirmasi pembayaran pesanan saya.">🧾 Konfirmasi Pembayaran / Lisensi</button>
+        <form id="wa-direct-form" style="display:flex;gap:6px;margin-top:4px;">
+          <input type="text" id="wa-direct-input" class="input" placeholder="Tulis pesan cepat..." style="padding:8px 11px;font-size:0.82rem;">
+          <button type="submit" class="btn btn-wa btn-sm">Kirim</button>
+        </form>
+      </div>
+    </div>
+
+    <button type="button" id="wa-float-btn" class="wa-float-btn" aria-label="Chat WhatsApp">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.82 11.82 0 0 0 12.06 0C5.5 0 .16 5.34.16 11.9c0 2.1.55 4.15 1.6 5.95L0 24l6.33-1.66a11.86 11.86 0 0 0 5.73 1.46h.01c6.55 0 11.89-5.34 11.89-11.9 0-3.18-1.24-6.17-3.44-8.42zM12.07 21.8a9.87 9.87 0 0 1-5.03-1.38l-.36-.21-3.75.98 1-3.66-.24-.37a9.86 9.86 0 0 1-1.52-5.26c0-5.45 4.44-9.89 9.9-9.89 2.64 0 5.12 1.03 6.99 2.9a9.83 9.83 0 0 1 2.9 7c0 5.45-4.44 9.89-9.89 9.89zm5.42-7.41c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.88 1.22 3.08.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.42.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35z"/></svg>
+      <span class="wa-label-text">Chat WhatsApp</span>
+    </button>
+  </div>
+
+  <!-- ========================================================================
+       KARAKTER HIDUP PENGIKUT KURSOR ("NUSA — SAHABAT DIGITAL HIDUP")
+       ======================================================================== -->
+  <div id="nusa-mascot-layer" class="nusa-mascot-layer" aria-hidden="true">
+    <div id="nusa-speech" class="nusa-speech">Halo Kak! Siap bantu ✨</div>
+    <svg id="nusa-svg" viewBox="0 0 120 135" width="96" height="108" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="nusaBodyGrad" cx="35%" cy="25%" r="70%">
+          <stop offset="0%" stop-color="#FFFFFF"/>
+          <stop offset="55%" stop-color="#DBEAFE"/>
+          <stop offset="100%" stop-color="#93C5FD"/>
+        </radialGradient>
+        <linearGradient id="nusaVisorGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0F172A"/>
+          <stop offset="60%" stop-color="#1E3A8A"/>
+          <stop offset="100%" stop-color="#090D16"/>
+        </linearGradient>
+        <linearGradient id="nusaCyanGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#38BDF8"/>
+          <stop offset="100%" stop-color="#2563EB"/>
+        </linearGradient>
+        <radialGradient id="nusaShadowGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#0F172A" stop-opacity="0.32"/>
+          <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+      <!-- Bayangan Tanah Dinamis -->
+      <ellipse id="nusa-shadow" cx="60" cy="126" rx="26" ry="6" fill="url(#nusaShadowGrad)"/>
+
+      <!-- Grup Utama Karakter yang Bernapas & Miring Mengikuti Kecepatan Kursor -->
+      <g id="nusa-rig">
+        <!-- Cincin Jet Anti-Gravitasi Bawah -->
+        <ellipse id="nusa-thruster" cx="60" cy="109" rx="13" ry="4.5" fill="#38BDF8" opacity="0.75"/>
+
+        <!-- Lengan Kiri & Kanan Artikulasi -->
+        <g id="nusa-arm-left" style="transform-origin: 33px 78px;">
+          <rect x="17" y="74" width="16" height="24" rx="8" fill="url(#nusaBodyGrad)" stroke="#60A5FA" stroke-width="1.2"/>
+          <circle cx="25" cy="94" r="4" fill="#38BDF8"/>
+        </g>
+        <g id="nusa-arm-right" style="transform-origin: 87px 78px;">
+          <rect x="87" y="74" width="16" height="24" rx="8" fill="url(#nusaBodyGrad)" stroke="#60A5FA" stroke-width="1.2"/>
+          <circle cx="95" cy="94" r="4" fill="#38BDF8"/>
+        </g>
+
+        <!-- Badan Kapsul Berlapis 3D + Inti Jantung Menyala -->
+        <path d="M35 72 C35 64, 85 64, 85 72 L81 102 C80 109, 40 109, 39 102 Z" fill="url(#nusaBodyGrad)" stroke="#60A5FA" stroke-width="1.4"/>
+        <circle id="nusa-heart-core" cx="60" cy="87" r="7.5" fill="url(#nusaCyanGlow)"/>
+        <path d="M57 87 L59.5 89.5 L64 84.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+        <!-- Kepala Ekspresif + Antena Sensor Hidup -->
+        <g id="nusa-head" style="transform-origin: 60px 46px;">
+          <!-- Antena Atas -->
+          <line x1="60" y1="18" x2="60" y2="9" stroke="#3B82F6" stroke-width="3" stroke-linecap="round"/>
+          <circle id="nusa-antenna-orb" cx="60" cy="7.5" r="5" fill="#38BDF8"/>
+          <circle cx="58.5" cy="6" r="1.6" fill="#FFFFFF"/>
+
+          <!-- Telinga Audio Samping -->
+          <rect x="20" y="36" width="9" height="20" rx="4.5" fill="url(#nusaCyanGlow)"/>
+          <rect x="91" y="36" width="9" height="20" rx="4.5" fill="url(#nusaCyanGlow)"/>
+
+          <!-- Helm Kepala 3D -->
+          <rect x="26" y="17" width="68" height="54" rx="26" fill="url(#nusaBodyGrad)" stroke="#60A5FA" stroke-width="1.5"/>
+          <!-- Pantulan Kaca Atas Helm -->
+          <path d="M40 23 C50 19, 70 19, 80 23" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+
+          <!-- Layar Wajah Visor Gelap -->
+          <rect x="33" y="26" width="54" height="37" rx="18" fill="url(#nusaVisorGrad)" stroke="#38BDF8" stroke-width="1.2"/>
+
+          <!-- Pipi Merona Lembut -->
+          <ellipse id="nusa-blush-l" cx="41" cy="53" rx="4.5" ry="2.4" fill="#F472B6" opacity="0.55"/>
+          <ellipse id="nusa-blush-r" cx="79" cy="53" rx="4.5" ry="2.4" fill="#F472B6" opacity="0.55"/>
+
+          <!-- Mata Hidup dengan Pupil & Kilau Kornea yang Melacak Kursor -->
+          <g id="nusa-eyes">
+            <g id="nusa-eye-l">
+              <ellipse cx="47" cy="43" rx="7.2" ry="8.2" fill="#0EA5E9" opacity="0.28"/>
+              <g class="nusa-pupil-group">
+                <circle cx="47" cy="43" r="5.6" fill="#38BDF8"/>
+                <circle cx="47" cy="43" r="2.8" fill="#090D16"/>
+                <circle cx="49" cy="40.8" r="1.7" fill="#FFFFFF"/>
+              </g>
+            </g>
+            <g id="nusa-eye-r">
+              <ellipse cx="73" cy="43" rx="7.2" ry="8.2" fill="#0EA5E9" opacity="0.28"/>
+              <g class="nusa-pupil-group">
+                <circle cx="73" cy="43" r="5.6" fill="#38BDF8"/>
+                <circle cx="73" cy="43" r="2.8" fill="#090D16"/>
+                <circle cx="75" cy="40.8" r="1.7" fill="#FFFFFF"/>
+              </g>
+            </g>
+          </g>
+
+          <!-- Kelopak Kedip Alami -->
+          <g id="nusa-eyelids" opacity="0">
+            <path d="M40 43 Q47 48 54 43" stroke="#38BDF8" stroke-width="3" stroke-linecap="round" fill="none"/>
+            <path d="M66 43 Q73 48 80 43" stroke="#38BDF8" stroke-width="3" stroke-linecap="round" fill="none"/>
+          </g>
+
+          <!-- Mulut Senyum Ekspresif -->
+          <path id="nusa-mouth" d="M55 54 Q60 58.5 65 54" stroke="#7DD3FC" stroke-width="2.3" stroke-linecap="round" fill="none"/>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <!-- Tombol Istirahatkan / Panggil Karakter Hidup -->
+  <button type="button" id="mascot-dock-btn" class="mascot-dock-toggle" title="Aktifkan atau istirahatkan asisten karakter hidup">
+    <span>🤖</span>
+    <span id="mascot-dock-label">Nusa Buddy: Aktif</span>
+  </button>
+
+  <!-- Skrip Konfigurasi & Aplikasi SPA -->
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
