@@ -15,5 +15,5 @@
  * ============================================================================
  */
 window.NUSASTORE_CONFIG = {
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbzf6iE_4XYkOAlFE3bKjoVMDscIdYUs3LJLr1KunTOTlr1-guFLsotfONRrdGvnN_nysA/exec'
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbzS1urYxE2RtqBl9MNDNaR1wzTLsBZQasznUuTLKzzUdRYP9ZqlrqvK-gc0FpvPLhG2TA/exec'
 };
