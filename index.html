@@ -12,6 +12,9 @@
   <!-- Google Fonts: Plus Jakarta Sans + Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Preconnect REST API Google Apps Script (Zero Handshake Delay) -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin>
+  <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="css/style.css">
@@ -272,42 +275,46 @@
        ======================================================================== -->
   <div id="view-admin" class="admin-shell hidden">
     <aside class="admin-sidebar">
-      <div class="brand" style="padding:6px 8px 16px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:8px;">
-        <div class="brand-mark">N</div>
-        <div>
-          <div class="brand-name" style="color:#FFFFFF;font-size:1.05rem;">NusaStore</div>
-          <div class="brand-sub" style="color:#38BDF8;">Admin Portal v3.0</div>
+      <div class="admin-sidebar-head">
+        <div class="brand">
+          <div class="brand-mark">N</div>
+          <div>
+            <div class="brand-name" style="color:#FFFFFF;font-size:1.05rem;">NusaStore</div>
+            <div class="brand-sub" style="color:#38BDF8;">Admin Portal v3.0</div>
+          </div>
         </div>
       </div>
 
-      <button type="button" class="admin-nav-btn is-active" data-tab="overview">
-        <span>📊 Ringkasan &amp; Analitik</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="orders">
-        <span>🧾 Transaksi &amp; Faktur</span>
-        <span id="nav-badge-pending" class="pill pill-Pending hidden">0</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="catalog">
-        <span>📦 Katalog &amp; Testimoni</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="crm">
-        <span>👥 CRM &amp; Pelanggan</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="notif">
-        <span>💬 WA, Email &amp; Blast</span>
-        <span id="nav-badge-queue" class="pill pill-MENUNGGU hidden">0</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="licenses">
-        <span>🔑 License Vault</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="migrasi">
-        <span>🔄 Migrasi Database</span>
-      </button>
-      <button type="button" class="admin-nav-btn" data-tab="settings">
-        <span>⚙️ Pengaturan &amp; Keamanan</span>
-      </button>
+      <div class="admin-nav-scroll">
+        <button type="button" class="admin-nav-btn is-active" data-tab="overview">
+          <span>📊 Ringkasan &amp; Analitik</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="orders">
+          <span>🧾 Transaksi &amp; Faktur</span>
+          <span id="nav-badge-pending" class="pill pill-Pending hidden">0</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="catalog">
+          <span>📦 Katalog &amp; Testimoni</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="crm">
+          <span>👥 CRM &amp; Pelanggan</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="notif">
+          <span>💬 WA, Email &amp; Blast</span>
+          <span id="nav-badge-queue" class="pill pill-MENUNGGU hidden">0</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="licenses">
+          <span>🔑 License Vault</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="migrasi">
+          <span>🔄 Migrasi Database</span>
+        </button>
+        <button type="button" class="admin-nav-btn" data-tab="settings">
+          <span>⚙️ Pengaturan &amp; Keamanan</span>
+        </button>
+      </div>
 
-      <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);display:grid;gap:6px;">
+      <div class="admin-sidebar-foot">
         <button type="button" class="admin-nav-btn" id="btn-back-storefront">🌐 Lihat Etalase Toko</button>
         <button type="button" class="admin-nav-btn" id="btn-admin-logout" style="color:#FCA5A5;">🚪 Keluar Sesi Admin</button>
       </div>
@@ -315,11 +322,11 @@
 
     <main class="admin-main">
       <div class="admin-topbar">
-        <div>
+        <div class="admin-topbar-title">
           <h2 id="admin-page-title" style="margin:0;font-size:1.4rem;">Ringkasan Penjualan &amp; Analitik</h2>
           <small id="admin-telemetry" style="color:var(--muted);">Sinkron Real-Time • Latensi API: — ms</small>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div class="admin-topbar-actions">
           <button type="button" class="btn btn-outline btn-sm" id="btn-admin-refresh">🔄 Segarkan Data</button>
           <a id="btn-open-sheets" href="#" target="_blank" rel="noopener" class="btn btn-outline btn-sm hidden">📊 Buka Google Sheets</a>
           <button type="button" class="btn btn-primary btn-sm" id="btn-quick-manual-order">+ Input Order Manual</button>

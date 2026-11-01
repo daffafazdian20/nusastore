@@ -34,6 +34,7 @@
     THEME: 'ns3_theme',
     PUB_CACHE: 'ns3_pub_swr',
     ADMIN_TOKEN: 'ns3_admin_token',
+    ADMIN_BOOT: 'ns3_admin_boot',
     MASCOT_DOCK: 'ns3_mascot_dock'
   };
 
@@ -161,11 +162,31 @@
     try { document.execCommand('copy'); toast((label || 'Teks') + ' berhasil disalin!', 'ok'); } catch (e) { /* skip */ }
     ta.remove();
   }
+  function debounce(fn, waitMs) {
+    let t = null;
+    return function () {
+      const ctx = this, args = arguments;
+      if (t) clearTimeout(t);
+      t = setTimeout(function () { fn.apply(ctx, args); }, waitMs);
+    };
+  }
+  function extractDriveFileId(url) {
+    const s = String(url || '').trim();
+    if (!s) return '';
+    const m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || s.match(/\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : '';
+  }
   function driveImgClient(url) {
     const s = String(url || '').trim();
     if (!s) return '';
-    const m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    return m ? ('https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1200') : s;
+    const id = extractDriveFileId(s);
+    return id ? ('https://lh3.googleusercontent.com/d/' + id + '=w1200') : s;
+  }
+  function driveImgFallback(url) {
+    const s = String(url || '').trim();
+    if (!s) return '';
+    const id = extractDriveFileId(s);
+    return id ? ('https://drive.google.com/thumbnail?id=' + id + '&sz=w1200') : s;
   }
   function extractAccountDigits(str) {
     const m = String(str || '').match(/(\d[\d\s-]{6,}\d)/);
@@ -174,16 +195,30 @@
   function openProofLightbox(url, title) {
     if (!url) return;
     const imgUrl = driveImgClient(url);
-    $('mpl-title').textContent = title || '📎 Pratinjau Bukti Pembayaran';
+    const fbUrl = driveImgFallback(url);
+    $('mpl-title').textContent = title || '🧾 Bukti Transfer dari Klien';
     $('mpl-body').innerHTML =
       '<div style="background:var(--surface-2);padding:12px;border-radius:12px;margin-bottom:14px;">' +
-        '<img src="' + esc(imgUrl) + '" alt="Bukti" style="max-width:100%;max-height:65vh;border-radius:10px;object-fit:contain;margin:0 auto;" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\';">' +
-        '<div style="display:none;padding:24px;color:var(--muted);font-size:0.86rem;">Berkas berupa dokumen PDF atau memerlukan pembukaan langsung di Google Drive.</div>' +
+        '<img id="mpl-preview-img" src="' + esc(imgUrl) + '" data-fb="' + esc(fbUrl) + '" alt="Bukti Transfer Klien" style="max-width:100%;max-height:65vh;border-radius:10px;object-fit:contain;margin:0 auto;">' +
+        '<div id="mpl-doc-fallback" style="display:none;padding:24px;color:var(--muted);font-size:0.86rem;">Berkas berupa dokumen PDF atau memerlukan pembukaan langsung di tab baru.</div>' +
       '</div>' +
       '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;">' +
-        '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm">🔗 Buka Berkas Asli di Tab Baru</a>' +
+        '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="btn btn-primary btn-sm">🔗 Buka Bukti Asli di Tab Baru</a>' +
         '<button type="button" class="btn btn-outline btn-sm" data-close="modal-proof-lightbox">Tutup Pratinjau</button>' +
       '</div>';
+    const pImg = $('mpl-preview-img');
+    if (pImg) {
+      pImg.onerror = function () {
+        const fb = pImg.getAttribute('data-fb');
+        if (fb && pImg.src !== fb) {
+          pImg.src = fb;
+        } else {
+          pImg.style.display = 'none';
+          const docFb = $('mpl-doc-fallback');
+          if (docFb) docFb.style.display = 'block';
+        }
+      };
+    }
     openOverlay('modal-proof-lightbox');
   }
   function saveMyLocalOrder(rec) {
@@ -899,9 +934,21 @@
   // ── Render Storefront & Hero Auto-Slideshow ─────────────────────────────────
   let heroTimer = null;
   let productSlideshowTimer = null;
+  let _lastPublicDataSig = '';
 
   function applyPublicData(data) {
     if (!data) return;
+    try {
+      const sig = JSON.stringify({
+        s: data.settings,
+        h: data.heroSlides,
+        c: data.categories,
+        p: data.products,
+        t: data.testimonials
+      });
+      if (sig === _lastPublicDataSig) return;
+      _lastPublicDataSig = sig;
+    } catch (e) { /* lanjut render */ }
     STATE.settings = Object.assign({}, STATE.settings, data.settings || {});
     STATE.heroSlides = Array.isArray(data.heroSlides) && data.heroSlides.length ? data.heroSlides : DEMO_DB.heroSlides;
     STATE.categories = Array.isArray(data.categories) ? data.categories : [];
@@ -1172,7 +1219,7 @@
 
     $('mp-title').textContent = p.nama_produk;
     $('mp-body').innerHTML =
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:24px;">' +
+      '<div class="product-modal-grid">' +
         '<div>' +
           '<div style="border-radius:16px;overflow:hidden;aspect-ratio:4/3;background:var(--surface-2);border:1px solid var(--border);margin-bottom:10px;">' +
             '<img id="mp-main-img" src="' + esc(imgs[0]) + '" alt="' + esc(p.nama_produk) + '" style="width:100%;height:100%;object-fit:cover;">' +
@@ -1188,7 +1235,7 @@
         '</div>' +
 
         '<div>' +
-          '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+          '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' +
             (p.badge_promo ? '<span class="pill pill-Diproses">' + esc(p.badge_promo) + '</span>' : '') +
             '<span style="color:#F59E0B;font-weight:700;">★ ' + esc((p.rating || 4.9).toFixed(1)) + ' (' + esc(p.jumlah_ulasan || 0) + ' ulasan)</span>' +
           '</div>' +
@@ -1210,7 +1257,7 @@
               '<div class="field"><label>Jumlah (Qty)</label><input type="number" class="input" name="qty" min="1" max="99" value="1"></div>' +
             '</div>' +
             '<div class="field"><label>Catatan Pesanan (Opsional)</label><input class="input" name="catatan" placeholder="Misal: Nama domain / jadwal setup..."></div>' +
-            '<div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:12px;">' +
+            '<div class="modal-cta-split" style="margin-top:12px;">' +
               '<button type="submit" class="btn btn-primary btn-lg btn-shimmer">💳 Buat Pesanan &amp; Bayar Sekarang</button>' +
               '<button type="button" class="btn btn-outline btn-lg" id="mp-add-cart-btn">+ Keranjang</button>' +
             '</div>' +
@@ -1714,7 +1761,7 @@
 
       '<div id="mpc-proof-upload-host" style="margin-bottom:16px;"></div>' +
 
-      '<div style="display:grid;grid-template-columns:1.3fr 1fr;gap:10px;">' +
+      '<div class="modal-cta-split">' +
         '<a href="' + esc(buildCustomerWaConfirmUrl(ord, '')) + '" target="_blank" rel="noopener" class="btn btn-wa" style="text-align:center;">💬 Konfirmasi / Tanya via WhatsApp</a>' +
         '<button type="button" class="btn btn-outline" id="mpc-go-tracker-btn">🔍 Buka Menu Cek Pesanan</button>' +
       '</div>';
@@ -2156,8 +2203,11 @@
   }
 
   // ── KARAKTER HIDUP PENGIKUT KURSOR ("NUSA BUDDY") ───────────────────────────
+  const _isCoarseTouch = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  const _savedMascotPref = localStorage.getItem(LS.MASCOT_DOCK);
   const MASCOT = {
-    docked: localStorage.getItem(LS.MASCOT_DOCK) === '1',
+    docked: _savedMascotPref !== null ? (_savedMascotPref === '1') : _isCoarseTouch,
+    rafRunning: false,
     mouseX: window.innerWidth * 0.72,
     mouseY: window.innerHeight * 0.45,
     x: window.innerWidth * 0.72,
@@ -2195,9 +2245,73 @@
     const dockLbl = $('mascot-dock-label');
     if (!layer || !rig) return;
 
+    let frame = 0;
+    function tickMascot() {
+      if (MASCOT.docked || document.visibilityState === 'hidden') {
+        MASCOT.rafRunning = false;
+        return;
+      }
+      MASCOT.rafRunning = true;
+      frame++;
+      // Offset cerdas agar karakter selalu di samping kursor tanpa menutupi area klik
+      const offsetX = MASCOT.mouseX > window.innerWidth - 150 ? -108 : 26;
+      const offsetY = MASCOT.mouseY > window.innerHeight - 150 ? -115 : 18;
+      const tx = Math.max(8, Math.min(window.innerWidth - 104, MASCOT.mouseX + offsetX));
+      const ty = Math.max(12, Math.min(window.innerHeight - 116, MASCOT.mouseY + offsetY));
+
+      const ax = (tx - MASCOT.x) * 0.085;
+      const ay = (ty - MASCOT.y) * 0.085;
+      MASCOT.vx = (MASCOT.vx + ax) * 0.78;
+      MASCOT.vy = (MASCOT.vy + ay) * 0.78;
+      MASCOT.x += MASCOT.vx;
+      MASCOT.y += MASCOT.vy;
+
+      // Gerak napas lembut + kemiringan proporsional kecepatan
+      const bob = Math.sin(frame * 0.065) * 4.5;
+      const tilt = Math.max(-18, Math.min(18, MASCOT.vx * 1.35));
+      const headTilt = Math.max(-10, Math.min(10, MASCOT.vx * 0.7));
+
+      layer.style.transform = 'translate3d(' + MASCOT.x.toFixed(1) + 'px,' + MASCOT.y.toFixed(1) + 'px,0)';
+      rig.style.transform = 'translateY(' + bob.toFixed(2) + 'px) rotate(' + tilt.toFixed(2) + 'deg)';
+      if (head) head.style.transform = 'rotate(' + headTilt.toFixed(2) + 'deg)';
+
+      // Ayunan lengan kanan & kiri yang hidup
+      const swing = Math.sin(frame * 0.09) * 8 + Math.max(-22, Math.min(22, -MASCOT.vy * 1.4));
+      if (armL) armL.style.transform = 'rotate(' + (10 + swing).toFixed(1) + 'deg)';
+      if (armR) armR.style.transform = 'rotate(' + (-10 - swing).toFixed(1) + 'deg)';
+
+      // Skala bayangan & pendorong jet
+      const shadowScale = 1 - (bob + 4.5) * 0.025;
+      if (shadow) shadow.setAttribute('rx', (25 * shadowScale).toFixed(1));
+      if (thruster) thruster.setAttribute('rx', (12 + Math.abs(Math.sin(frame * 0.22)) * 3.5).toFixed(1));
+
+      // Pelacakan pupil mata menatap tepat ke arah kursor
+      const centerX = MASCOT.x + 48;
+      const centerY = MASCOT.y + 38;
+      const dx = MASCOT.mouseX - centerX;
+      const dy = MASCOT.mouseY - centerY;
+      const dist = Math.min(3.4, Math.hypot(dx, dy) / 28);
+      const ang = Math.atan2(dy, dx);
+      const px = (Math.cos(ang) * dist).toFixed(2);
+      const py = (Math.sin(ang) * dist).toFixed(2);
+      pupils.forEach(function (pg) {
+        pg.setAttribute('transform', 'translate(' + px + ',' + py + ')');
+      });
+
+      requestAnimationFrame(tickMascot);
+    }
+
+    function ensureMascotLoop() {
+      if (!MASCOT.docked && !MASCOT.rafRunning) {
+        MASCOT.rafRunning = true;
+        requestAnimationFrame(tickMascot);
+      }
+    }
+
     function syncDockState() {
       layer.classList.toggle('is-docked', MASCOT.docked);
       if (dockLbl) dockLbl.textContent = MASCOT.docked ? 'Panggil Nusa Buddy' : 'Nusa Buddy: Aktif';
+      ensureMascotLoop();
     }
     syncDockState();
 
@@ -2210,36 +2324,48 @@
       };
     }
 
-    window.addEventListener('mousemove', function (e) {
-      MASCOT.mouseX = e.clientX;
-      MASCOT.mouseY = e.clientY;
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') ensureMascotLoop();
+    });
 
-      // Update posisi radial spotlight (--mx, --my) jika kursor di atas kartu produk
-      const pcard = e.target && e.target.closest ? e.target.closest('.pcard') : null;
-      if (pcard) {
-        const rect = pcard.getBoundingClientRect();
-        pcard.style.setProperty('--mx', (e.clientX - rect.left) + 'px');
-        pcard.style.setProperty('--my', (e.clientY - rect.top) + 'px');
-      }
+    if (!_isCoarseTouch) {
+      window.addEventListener('mousemove', function (e) {
+        MASCOT.mouseX = e.clientX;
+        MASCOT.mouseY = e.clientY;
 
-      // Reaksi kontekstual karakter saat kursor berpindah elemen
-      if (!MASCOT.docked && e.target && e.target.closest) {
-        if (pcard && MASCOT.lastHoverTag !== 'pcard') {
-          MASCOT.lastHoverTag = 'pcard';
-          if (mouth) mouth.setAttribute('d', 'M53 53 Q60 61 67 53');
-          sayMascot('Klik untuk lihat galeri & detailnya! ✨', 2100);
-        } else if (e.target.closest('.tcard-scene') && MASCOT.lastHoverTag !== 'tcard') {
-          MASCOT.lastHoverTag = 'tcard';
-          sayMascot('Klik kartu untuk baca kisah lengkapnya! 🌟', 2200);
-        } else if (e.target.closest('.btn-wa, #wa-float-btn') && MASCOT.lastHoverTag !== 'wa') {
-          MASCOT.lastHoverTag = 'wa';
-          sayMascot('Langsung terhubung ke WhatsApp CS! 💬', 2100);
-        } else if (!pcard && !e.target.closest('.tcard-scene') && !e.target.closest('.btn-wa, #wa-float-btn')) {
-          MASCOT.lastHoverTag = '';
-          if (mouth) mouth.setAttribute('d', 'M55 54 Q60 58.5 65 54');
+        // Update posisi radial spotlight (--mx, --my) jika kursor di atas kartu produk
+        const pcard = e.target && e.target.closest ? e.target.closest('.pcard') : null;
+        if (pcard) {
+          const rect = pcard.getBoundingClientRect();
+          pcard.style.setProperty('--mx', (e.clientX - rect.left) + 'px');
+          pcard.style.setProperty('--my', (e.clientY - rect.top) + 'px');
         }
-      }
-    }, { passive: true });
+
+        // Reaksi kontekstual karakter saat kursor berpindah elemen
+        if (!MASCOT.docked && e.target && e.target.closest) {
+          if (pcard && MASCOT.lastHoverTag !== 'pcard') {
+            MASCOT.lastHoverTag = 'pcard';
+            if (mouth) mouth.setAttribute('d', 'M53 53 Q60 61 67 53');
+            sayMascot('Klik untuk lihat galeri & detailnya! ✨', 2100);
+          } else if (e.target.closest('.tcard-scene') && MASCOT.lastHoverTag !== 'tcard') {
+            MASCOT.lastHoverTag = 'tcard';
+            sayMascot('Klik kartu untuk baca kisah lengkapnya! 🌟', 2200);
+          } else if (e.target.closest('.btn-wa, #wa-float-btn') && MASCOT.lastHoverTag !== 'wa') {
+            MASCOT.lastHoverTag = 'wa';
+            sayMascot('Langsung terhubung ke WhatsApp CS! 💬', 2100);
+          } else if (!pcard && !e.target.closest('.tcard-scene') && !e.target.closest('.btn-wa, #wa-float-btn')) {
+            MASCOT.lastHoverTag = '';
+            if (mouth) mouth.setAttribute('d', 'M55 54 Q60 58.5 65 54');
+          }
+        }
+      }, { passive: true });
+    } else {
+      window.addEventListener('touchstart', function (e) {
+        if (MASCOT.docked || !e.touches || !e.touches[0]) return;
+        MASCOT.mouseX = e.touches[0].clientX;
+        MASCOT.mouseY = e.touches[0].clientY;
+      }, { passive: true });
+    }
 
     // Kedipan mata alami secara acak
     function scheduleBlink() {
@@ -2258,60 +2384,10 @@
     }
     scheduleBlink();
 
-    // Loop fisika pegas 60fps
-    let frame = 0;
-    function tickMascot() {
-      frame++;
-      if (!MASCOT.docked) {
-        // Offset cerdas agar karakter selalu di samping kursor tanpa menutupi area klik
-        const offsetX = MASCOT.mouseX > window.innerWidth - 150 ? -108 : 26;
-        const offsetY = MASCOT.mouseY > window.innerHeight - 150 ? -115 : 18;
-        const tx = Math.max(8, Math.min(window.innerWidth - 104, MASCOT.mouseX + offsetX));
-        const ty = Math.max(12, Math.min(window.innerHeight - 116, MASCOT.mouseY + offsetY));
-
-        const ax = (tx - MASCOT.x) * 0.085;
-        const ay = (ty - MASCOT.y) * 0.085;
-        MASCOT.vx = (MASCOT.vx + ax) * 0.78;
-        MASCOT.vy = (MASCOT.vy + ay) * 0.78;
-        MASCOT.x += MASCOT.vx;
-        MASCOT.y += MASCOT.vy;
-
-        // Gerak napas lembut + kemiringan proporsional kecepatan
-        const bob = Math.sin(frame * 0.065) * 4.5;
-        const tilt = Math.max(-18, Math.min(18, MASCOT.vx * 1.35));
-        const headTilt = Math.max(-10, Math.min(10, MASCOT.vx * 0.7));
-
-        layer.style.transform = 'translate3d(' + MASCOT.x.toFixed(1) + 'px,' + MASCOT.y.toFixed(1) + 'px,0)';
-        rig.style.transform = 'translateY(' + bob.toFixed(2) + 'px) rotate(' + tilt.toFixed(2) + 'deg)';
-        if (head) head.style.transform = 'rotate(' + headTilt.toFixed(2) + 'deg)';
-
-        // Ayunan lengan kanan & kiri yang hidup
-        const swing = Math.sin(frame * 0.09) * 8 + Math.max(-22, Math.min(22, -MASCOT.vy * 1.4));
-        if (armL) armL.style.transform = 'rotate(' + (10 + swing).toFixed(1) + 'deg)';
-        if (armR) armR.style.transform = 'rotate(' + (-10 - swing).toFixed(1) + 'deg)';
-
-        // Skala bayangan & pendorong jet
-        const shadowScale = 1 - (bob + 4.5) * 0.025;
-        if (shadow) shadow.setAttribute('rx', (25 * shadowScale).toFixed(1));
-        if (thruster) thruster.setAttribute('rx', (12 + Math.abs(Math.sin(frame * 0.22)) * 3.5).toFixed(1));
-
-        // Pelacakan pupil mata menatap tepat ke arah kursor
-        const centerX = MASCOT.x + 48;
-        const centerY = MASCOT.y + 38;
-        const dx = MASCOT.mouseX - centerX;
-        const dy = MASCOT.mouseY - centerY;
-        const dist = Math.min(3.4, Math.hypot(dx, dy) / 28);
-        const ang = Math.atan2(dy, dx);
-        const px = (Math.cos(ang) * dist).toFixed(2);
-        const py = (Math.sin(ang) * dist).toFixed(2);
-        pupils.forEach(function (pg) {
-          pg.setAttribute('transform', 'translate(' + px + ',' + py + ')');
-        });
-      }
-      requestAnimationFrame(tickMascot);
+    ensureMascotLoop();
+    if (!MASCOT.docked) {
+      setTimeout(function () { sayMascot('Halo Kak! Aku Nusa, siap menemani belanja ✨', 3600); }, 900);
     }
-    requestAnimationFrame(tickMascot);
-    setTimeout(function () { sayMascot('Halo Kak! Aku Nusa, siap menemani belanja ✨', 3600); }, 1100);
   }
 
   // ── ADMIN PORTAL: AUTENTIKASI, TELEMETRI & SHELL ────────────────────────────
@@ -2339,12 +2415,41 @@
   }
 
   async function enterAdminPortal(bootPayload) {
+    let usedCache = false;
     if (!bootPayload) {
-      const res = await apiCall('adminBootstrap', {}, 'POST');
-      if (!res.success) return;
-      bootPayload = res.data;
+      try {
+        const rawBoot = sessionStorage.getItem(LS.ADMIN_BOOT);
+        if (rawBoot) {
+          bootPayload = JSON.parse(rawBoot);
+          usedCache = true;
+        }
+      } catch (e) { /* skip */ }
     }
-    ingestAdminBootstrap(bootPayload);
+
+    if (bootPayload) {
+      // 0ms Instant Open: tampilkan langsung tanpa delay
+      ingestAdminBootstrap(bootPayload);
+      $('view-storefront').classList.add('hidden');
+      $('wa-float-wrap').classList.add('hidden');
+      $('view-admin').classList.remove('hidden');
+      renderAdminActiveTab();
+      startAdminAdaptivePolling();
+
+      // Bila memakai snapshot sesi, segarkan diam-diam di latar belakang
+      if (usedCache) {
+        apiCall('adminBootstrap', {}, 'POST').then(function (res) {
+          if (res && res.success && res.data) {
+            ingestAdminBootstrap(res.data);
+            if (!$('view-admin').classList.contains('hidden')) renderAdminActiveTab();
+          }
+        }).catch(function () {});
+      }
+      return;
+    }
+
+    const res = await apiCall('adminBootstrap', {}, 'POST');
+    if (!res.success) return;
+    ingestAdminBootstrap(res.data);
     $('view-storefront').classList.add('hidden');
     $('wa-float-wrap').classList.add('hidden');
     $('view-admin').classList.remove('hidden');
@@ -2364,6 +2469,7 @@
 
   function ingestAdminBootstrap(d) {
     if (!d) return;
+    try { sessionStorage.setItem(LS.ADMIN_BOOT, JSON.stringify(d)); } catch (e) { /* quota */ }
     if (d.settings) STATE.settings = d.settings;
     if (d.heroSlides) STATE.heroSlides = d.heroSlides;
     if (d.categories) STATE.categories = d.categories;
@@ -2497,9 +2603,9 @@
         '<div class="kpi-card"><small>Rasio Konversi Bayar</small><h3>' + convRate + '%</h3><small>Kontak CRM: ' + ((STATE.adminData.notifCrm && STATE.adminData.notifCrm.contacts) ? STATE.adminData.notifCrm.contacts.length : 0) + ' pelanggan</small></div>' +
       '</div>' +
 
-      '<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;margin-bottom:20px;">' +
+      '<div class="admin-overview-split">' +
         '<div class="panel-card" style="margin:0;">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
             '<div><h3 style="margin:0;font-size:1.05rem;">Grafik Tren Pendapatan</h3><small style="color:var(--muted);">Akumulasi pesanan berstatus Lunas, Diproses &amp; Selesai</small></div>' +
             '<div style="display:flex;gap:6px;">' +
               '<button type="button" class="filter-chip ' + (days === 7 ? 'is-active' : '') + '" data-chart-days="7">7 Hari</button>' +
@@ -2561,7 +2667,7 @@
                 return '<option value="' + st + '"' + (o.status_pesanan === st ? ' selected' : '') + '>' + st + '</option>';
               }).join('') +
             '</select>' +
-            (o.link_bukti_transfer ? '<div style="margin-top:4px;"><span class="pill pill-Diproses" style="font-size:0.68rem;">📎 Bukti Masuk</span></div>' : '') +
+            (o.link_bukti_transfer ? '<div style="margin-top:4px;"><span class="pill pill-Diproses" style="font-size:0.68rem;">🧾 Bukti Klien Masuk</span></div>' : '') +
           '</td>' +
           '<td><div style="display:flex;gap:6px;">' +
             '<button type="button" class="btn btn-outline btn-sm" data-open-order="' + esc(o.id_pesanan) + '">Detail</button>' +
@@ -2577,16 +2683,25 @@
       sel.onchange = async function () {
         const id = sel.getAttribute('data-quick-status');
         const nextSt = sel.value;
+        const idx = STATE.adminData.orders.findIndex(function (x) { return x.id_pesanan === id; });
+        const prevSt = idx >= 0 ? STATE.adminData.orders[idx].status_pesanan : 'Pending';
         const notify = (nextSt === 'Lunas' && STATE.settings.notif_otomatis_lunas === 'Ya') ||
                        (nextSt === 'Selesai' && STATE.settings.notif_otomatis_selesai === 'Ya');
+
+        // Optimistic UI (0ms tanpa delay): perbarui tampilan seketika sebelum server merespons
+        if (idx >= 0) STATE.adminData.orders[idx].status_pesanan = nextSt;
+        updateTelemetryBar();
+        toast('Status pesanan ' + id + ' → ' + nextSt + (notify ? ' (Notifikasi masuk antrean)' : ''), 'ok');
+
         const res = await apiCall('adminUpdateOrder', { id: id, patch: { status_pesanan: nextSt }, opts: { notify: notify } }, 'POST');
         if (res.success) {
-          const idx = STATE.adminData.orders.findIndex(function (x) { return x.id_pesanan === id; });
           if (idx >= 0 && res.data && res.data.order) STATE.adminData.orders[idx] = res.data.order;
-          toast('Status pesanan ' + id + ' → ' + nextSt + (notify ? ' (Notifikasi masuk antrean)' : ''), 'ok');
           updateTelemetryBar();
-          renderAdminActiveTab();
         } else {
+          // Rollback bila gagal
+          if (idx >= 0) STATE.adminData.orders[idx].status_pesanan = prevSt;
+          sel.value = prevSt;
+          updateTelemetryBar();
           toast(res.message || 'Gagal memperbarui status.', 'err');
         }
       };
@@ -2599,10 +2714,10 @@
     });
   }
 
-  function renderAdminOrders(host) {
+  function getFilteredAdminOrders() {
     const all = (STATE.adminData.orders || []).slice().reverse();
     const q = STATE.orderSearch.trim().toLowerCase();
-    const filtered = all.filter(function (o) {
+    return all.filter(function (o) {
       if (STATE.orderStatusFilter !== 'ALL' && o.status_pesanan !== STATE.orderStatusFilter) return false;
       if (q) {
         const hay = (o.id_pesanan + ' ' + o.nama_pelanggan + ' ' + o.no_whatsapp + ' ' + o.nama_produk).toLowerCase();
@@ -2610,31 +2725,53 @@
       }
       return true;
     });
+  }
+
+  function renderAdminOrders(host) {
+    const filtered = getFilteredAdminOrders();
 
     host.innerHTML =
       '<div class="panel-card">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">' +
+        '<div class="admin-toolbar-row">' +
           '<div class="chip-list">' +
             ['ALL', 'Pending', 'Lunas', 'Diproses', 'Selesai', 'Batal'].map(function (st) {
               return '<button type="button" class="filter-chip ' + (STATE.orderStatusFilter === st ? 'is-active' : '') + '" data-ord-filter="' + st + '">' + (st === 'ALL' ? 'Semua Status' : st) + '</button>';
             }).join('') +
           '</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-            '<input type="search" id="ord-search-input" class="input" placeholder="Cari ID, nama, WA..." value="' + esc(STATE.orderSearch) + '" style="width:220px;padding:7px 12px;">' +
+          '<div class="admin-toolbar-controls">' +
+            '<input type="search" id="ord-search-input" class="input admin-search-input" placeholder="Cari ID, nama, WA..." value="' + esc(STATE.orderSearch) + '">' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-export-csv">⬇️ CSV</button>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-export-xlsx">📊 Excel (.xlsx)</button>' +
           '</div>' +
         '</div>' +
-        renderOrderTableHtml(filtered) +
+        '<div id="ord-table-host">' + renderOrderTableHtml(filtered) + '</div>' +
       '</div>';
 
+    function refreshOrderTableInPlace() {
+      const tblHost = $('ord-table-host');
+      if (!tblHost) return;
+      const rows = getFilteredAdminOrders();
+      tblHost.innerHTML = renderOrderTableHtml(rows);
+      bindOrderTableActions(tblHost);
+    }
+
     host.querySelectorAll('[data-ord-filter]').forEach(function (b) {
-      b.onclick = function () { STATE.orderStatusFilter = b.getAttribute('data-ord-filter'); renderAdminOrders(host); };
+      b.onclick = function () {
+        STATE.orderStatusFilter = b.getAttribute('data-ord-filter');
+        host.querySelectorAll('[data-ord-filter]').forEach(function (chip) {
+          chip.classList.toggle('is-active', chip.getAttribute('data-ord-filter') === STATE.orderStatusFilter);
+        });
+        refreshOrderTableInPlace();
+      };
     });
-    $('ord-search-input').oninput = function (e) { STATE.orderSearch = e.target.value; renderAdminOrders(host); };
-    $('btn-export-csv').onclick = function () { exportOrdersCsv(filtered); };
-    $('btn-export-xlsx').onclick = function () { exportOrdersXlsx(filtered); };
-    bindOrderTableActions(host);
+    const debouncedOrderSearch = debounce(refreshOrderTableInPlace, 75);
+    $('ord-search-input').oninput = function (e) {
+      STATE.orderSearch = e.target.value;
+      debouncedOrderSearch();
+    };
+    $('btn-export-csv').onclick = function () { exportOrdersCsv(getFilteredAdminOrders()); };
+    $('btn-export-xlsx').onclick = function () { exportOrdersXlsx(getFilteredAdminOrders()); };
+    bindOrderTableActions($('ord-table-host') || host);
   }
 
   // ── OPSI 3: RENDER PESAN WA MANUAL & HYBRID FALLBACK DI SISI ADMIN ─────────
@@ -2688,7 +2825,9 @@
       (STATE.adminData.secrets && STATE.adminData.secrets.fonnte && STATE.adminData.secrets.fonnte.ada) ||
       (STATE.adminData.notifCrm && STATE.adminData.notifCrm.config && STATE.adminData.notifCrm.config.fonnteAda)
     );
-    const proofThumb = o.link_bukti_transfer ? driveImgClient(o.link_bukti_transfer) : '';
+    const hasClientProof = Boolean(o.link_bukti_transfer && String(o.link_bukti_transfer).trim());
+    const proofThumb = hasClientProof ? driveImgClient(o.link_bukti_transfer) : '';
+    const proofFallback = hasClientProof ? driveImgFallback(o.link_bukti_transfer) : '';
 
     $('dad-title').textContent = 'Pesanan ' + o.id_pesanan;
     $('dad-foot').classList.add('hidden');
@@ -2698,11 +2837,11 @@
           '<div><strong>Pelanggan:</strong> ' + esc(o.nama_pelanggan) + ' (+' + esc(o.no_whatsapp) + ')</div>' +
           '<div><strong>Produk:</strong> ' + esc(o.nama_produk) + '</div>' +
           '<div><strong>Total:</strong> <span style="color:var(--primary);font-weight:800;">Rp ' + rupiah(o.total_harga) + '</span></div>' +
-          '<div><strong>Status:</strong> <span class="pill pill-' + esc(o.status_pesanan) + '">' + esc(o.status_pesanan) + '</span></div>' +
+          '<div><strong>Status:</strong> <span id="od-status-pill" class="pill pill-' + esc(o.status_pesanan) + '">' + esc(o.status_pesanan) + '</span></div>' +
           (o.kunci_lisensi ? '<div style="margin-top:6px;"><strong>Kunci Lisensi:</strong> <code>' + esc(o.kunci_lisensi) + '</code></div>' : '') +
         '</div>' +
 
-        '<div class="field"><label>Metode Pembayaran</label>' +
+        '<div class="field"><label>Metode Pembayaran Klien</label>' +
           '<input id="od-metode" class="input" value="' + esc(o.metode_bayar || '') + '" placeholder="Transfer BCA / QRIS">' +
         '</div>' +
         '<div class="field"><label>Catatan Internal / Pelanggan</label>' +
@@ -2711,20 +2850,40 @@
         '<button type="button" class="btn btn-primary btn-sm" id="od-save-btn">💾 Simpan Perubahan</button>' +
 
         '<hr style="border:none;border-top:1px solid var(--border);margin:6px 0;">' +
-        '<h4 style="margin:0;font-size:0.92rem;">📎 Bukti Transfer (Google Drive)</h4>' +
-        (o.link_bukti_transfer
-          ? '<div style="background:var(--surface-2);padding:10px;border-radius:12px;border:1px solid var(--border);display:grid;gap:8px;">' +
-              '<img src="' + esc(proofThumb) + '" alt="Bukti Bayar" style="max-height:160px;width:100%;object-fit:contain;border-radius:8px;background:var(--surface);cursor:pointer;" id="od-proof-img-preview" onerror="this.style.display=\'none\'">' +
-              '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-                '<button type="button" class="btn btn-outline btn-sm" id="od-zoom-proof-btn" style="flex:1;">🔍 Perbesar Bukti</button>' +
-                '<a href="' + esc(o.link_bukti_transfer) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="flex:1;text-align:center;">🔗 Buka Drive</a>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<h4 style="margin:0;font-size:0.92rem;">🧾 Bukti Transfer dari Klien</h4>' +
+          (hasClientProof
+            ? '<span class="pill pill-Lunas" style="font-size:0.68rem;">✓ Bukti Diterima</span>'
+            : '<span class="pill pill-Pending" style="font-size:0.68rem;">⏳ Menunggu Klien</span>') +
+        '</div>' +
+        (hasClientProof
+          ? '<div class="client-proof-card">' +
+              '<div class="client-proof-meta">' +
+                '<span>👤 Pengirim: <strong>' + esc(o.nama_pelanggan) + '</strong></span>' +
+                '<span>💳 Metode: <strong>' + esc(o.metode_bayar || 'Transfer / QRIS') + '</strong></span>' +
+              '</div>' +
+              '<div class="client-proof-preview-box">' +
+                '<img src="' + esc(proofThumb) + '" data-fb="' + esc(proofFallback) + '" alt="Bukti Transfer dari Klien" id="od-proof-img-preview">' +
+                '<div id="od-proof-doc-fallback" style="display:none;padding:12px;font-size:0.78rem;color:var(--muted);">📄 Bukti transfer berformat PDF / Dokumen. Klik tombol <strong>Buka Bukti Asli</strong> untuk memeriksa detail transfer klien.</div>' +
+              '</div>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                '<button type="button" class="btn btn-outline btn-sm" id="od-zoom-proof-btn" style="flex:1;justify-content:center;">🔍 Lihat Bukti Penuh</button>' +
+                '<a href="' + esc(o.link_bukti_transfer) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="flex:1;justify-content:center;text-align:center;">🔗 Buka Bukti Asli</a>' +
               '</div>' +
               (o.status_pesanan === 'Pending'
-                ? '<button type="button" class="btn btn-wa btn-sm" id="od-verify-lunas-btn" style="width:100%;">✅ Verifikasi Pembayaran Lunas (1-Klik)</button>'
+                ? '<button type="button" class="btn btn-wa btn-sm" id="od-verify-lunas-btn" style="width:100%;justify-content:center;">✅ Terima Bukti &amp; Verifikasi Lunas (1-Klik)</button>'
                 : '') +
             '</div>'
-          : '<small style="color:var(--muted);">Belum ada bukti transfer diunggah pelanggan.</small>') +
-        '<input type="file" id="od-proof-file" accept="image/*,application/pdf" class="input" style="font-size:0.8rem;">' +
+          : '<div class="client-proof-empty">' +
+              '<div style="font-size:0.81rem;color:var(--text-2);line-height:1.5;">' +
+                '<strong>Belum ada bukti transfer yang dikirim oleh klien (' + esc(o.nama_pelanggan) + ').</strong><br>' +
+                '<span style="color:var(--muted);font-size:0.76rem;">Bukti transfer akan otomatis tampil di sini begitu klien mengirimkannya melalui Pop-Up Pembayaran atau menu <strong>💳 Cek Pesanan</strong> di halaman utama.</span>' +
+              '</div>' +
+              '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+                '<button type="button" class="btn btn-outline btn-sm" id="od-refresh-proof-btn" style="flex:1;justify-content:center;">🔄 Cek Bukti Masuk</button>' +
+                '<button type="button" class="btn btn-primary btn-sm" id="od-ask-proof-wa-btn" style="flex:1;justify-content:center;">💬 Minta Bukti Transfer (WA)</button>' +
+              '</div>' +
+            '</div>') +
 
         '<hr style="border:none;border-top:1px solid var(--border);margin:6px 0;">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">' +
@@ -2759,33 +2918,61 @@
       '</div>';
 
     $('od-save-btn').onclick = async function () {
+      const nextMetode = $('od-metode').value;
+      const nextCatatan = $('od-catatan').value;
+      const prevMetode = o.metode_bayar;
+      const prevCatatan = o.catatan;
+      // Optimistic UI (0ms tanpa delay)
+      o.metode_bayar = nextMetode;
+      o.catatan = nextCatatan;
+      toast('Detail pesanan disimpan.', 'ok');
+      renderAdminActiveTab();
+
       const res = await apiCall('adminUpdateOrder', {
         id: o.id_pesanan,
-        patch: { metode_bayar: $('od-metode').value, catatan: $('od-catatan').value },
+        patch: { metode_bayar: nextMetode, catatan: nextCatatan },
         opts: {}
       }, 'POST');
       if (res.success) {
-        Object.assign(o, res.data.order || {});
-        toast('Detail pesanan disimpan.', 'ok');
-        renderAdminActiveTab();
-      } else toast(res.message, 'err');
+        if (res.data && res.data.order) Object.assign(o, res.data.order);
+      } else {
+        o.metode_bayar = prevMetode;
+        o.catatan = prevCatatan;
+        toast(res.message || 'Gagal menyimpan perubahan.', 'err');
+      }
     };
 
     const zoomBtn = $('od-zoom-proof-btn');
     const prevImgEl = $('od-proof-img-preview');
-    if (zoomBtn && o.link_bukti_transfer) {
-      zoomBtn.onclick = function () { openProofLightbox(o.link_bukti_transfer, '📎 Bukti Pembayaran #' + o.id_pesanan); };
+    if (prevImgEl && hasClientProof) {
+      prevImgEl.onerror = function () {
+        const fb = prevImgEl.getAttribute('data-fb');
+        if (fb && prevImgEl.src !== fb) {
+          prevImgEl.src = fb;
+        } else {
+          prevImgEl.style.display = 'none';
+          const docNote = $('od-proof-doc-fallback');
+          if (docNote) docNote.style.display = 'block';
+        }
+      };
+      prevImgEl.onclick = function () { openProofLightbox(o.link_bukti_transfer, '🧾 Bukti Transfer Klien — #' + o.id_pesanan); };
     }
-    if (prevImgEl && o.link_bukti_transfer) {
-      prevImgEl.onclick = function () { openProofLightbox(o.link_bukti_transfer, '📎 Bukti Pembayaran #' + o.id_pesanan); };
+    if (zoomBtn && hasClientProof) {
+      zoomBtn.onclick = function () { openProofLightbox(o.link_bukti_transfer, '🧾 Bukti Transfer Klien — #' + o.id_pesanan); };
     }
 
     const verBtn = $('od-verify-lunas-btn');
     if (verBtn) {
       verBtn.onclick = async function () {
-        verBtn.disabled = true;
-        verBtn.textContent = '⏳ Memverifikasi Lunas...';
+        const prevStatus = o.status_pesanan;
         const notify = STATE.settings.notif_otomatis_lunas === 'Ya';
+        // Optimistic UI (0ms instan): langsung tandai Lunas tanpa menunggu server
+        o.status_pesanan = 'Lunas';
+        updateTelemetryBar();
+        renderAdminActiveTab();
+        openOrderDetailDrawer(o.id_pesanan);
+        toast('Bukti diterima! Pesanan ' + o.id_pesanan + ' diverifikasi LUNAS.', 'ok');
+
         const res = await apiCall('adminUpdateOrder', {
           id: o.id_pesanan,
           patch: { status_pesanan: 'Lunas' },
@@ -2793,37 +2980,59 @@
         }, 'POST');
         if (res.success) {
           if (res.data && res.data.order) Object.assign(o, res.data.order);
-          toast('Pesanan ' + o.id_pesanan + ' diverifikasi LUNAS!', 'ok');
+          updateTelemetryBar();
+          renderAdminActiveTab();
+        } else {
+          o.status_pesanan = prevStatus;
           updateTelemetryBar();
           renderAdminActiveTab();
           openOrderDetailDrawer(o.id_pesanan);
-        } else {
-          verBtn.disabled = false;
-          verBtn.textContent = '✅ Verifikasi Pembayaran Lunas (1-Klik)';
-          toast(res.message || 'Gagal memperbarui status.', 'err');
+          toast(res.message || 'Gagal memverifikasi status di server.', 'err');
         }
       };
     }
 
-    $('od-proof-file').onchange = function (ev) {
-      const file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = async function () {
-        const base64 = String(reader.result || '').split(',')[1] || '';
-        toast('Mengunggah bukti transfer ke Google Drive...', 'info');
-        const res = await apiCall('adminUploadFile', {
-          kind: 'proof', base64: base64, mime: file.type, filename: file.name, refId: o.id_pesanan
-        }, 'POST');
-        if (res.success) {
-          if (res.data && res.data.order) Object.assign(o, res.data.order);
-          toast('Bukti transfer berhasil disimpan ke Drive!', 'ok');
+    const refreshProofBtn = $('od-refresh-proof-btn');
+    if (refreshProofBtn) {
+      refreshProofBtn.onclick = async function () {
+        refreshProofBtn.disabled = true;
+        refreshProofBtn.textContent = '⏳ Mengecek...';
+        const res = await apiCall('adminBootstrap', {}, 'POST');
+        if (res && res.success && res.data) {
+          ingestAdminBootstrap(res.data);
           renderAdminActiveTab();
           openOrderDetailDrawer(o.id_pesanan);
-        } else toast(res.message, 'err');
+          const updatedOrd = (STATE.adminData.orders || []).find(function (x) { return x.id_pesanan === o.id_pesanan; });
+          if (updatedOrd && updatedOrd.link_bukti_transfer) {
+            toast('Bukti transfer dari klien ditemukan!', 'ok');
+          } else {
+            toast('Data sudah paling baru — klien belum mengirim bukti transfer.', 'info');
+          }
+        } else {
+          refreshProofBtn.disabled = false;
+          refreshProofBtn.textContent = '🔄 Cek Bukti Masuk';
+          toast('Gagal menyegarkan data pesanan.', 'err');
+        }
       };
-      reader.readAsDataURL(file);
-    };
+    }
+
+    const askProofWaBtn = $('od-ask-proof-wa-btn');
+    if (askProofWaBtn) {
+      askProofWaBtn.onclick = function () {
+        const portalUrl = window.location.origin + window.location.pathname;
+        const rekening = STATE.settings.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi';
+        const msg =
+          'Halo Kak *' + (o.nama_pelanggan || '') + '*, terima kasih atas pesanan Anda di *' + (STATE.settings.nama_toko || 'NusaStore') + '* 🙏\n\n' +
+          'Berikut pengingat rincian pembayaran:\n' +
+          '• ID Pesanan: *' + o.id_pesanan + '*\n' +
+          '• Produk: ' + (o.nama_produk || '-') + '\n' +
+          '• Total Tagihan: *Rp ' + rupiah(o.total_harga) + '*\n' +
+          '• Rekening Resmi: *' + rekening + '*\n\n' +
+          'Apabila sudah melakukan pembayaran, silakan kirim *Bukti Transfer* melalui menu *💳 Cek Pesanan* di website:\n' +
+          portalUrl + '\n\natau balas langsung bukti transfernya di chat WhatsApp ini agar pesanan segera kami proses. Terima kasih! ✨';
+        openManualWaForOrder(o, '', msg);
+      };
+    }
 
     $('dad-body').querySelectorAll('[data-wa-tpl]').forEach(function (b) {
       b.onclick = async function () {
@@ -3303,6 +3512,26 @@
   }
 
   // ── PANEL ADMIN 4: CRM KONTAK & RIWAYAT INTERAKSI (gas-notifikasi-wa-crm) ──
+  function renderCrmTableRowsHtml(rows) {
+    return '<div class="table-wrap"><table class="data-table">' +
+      '<thead><tr><th>Nama &amp; Sumber</th><th>WhatsApp / Email</th><th>Segmen &amp; Tag</th><th>Status WA</th><th>Opt-Out</th><th>Aksi</th></tr></thead>' +
+      '<tbody>' + (rows.length ? rows.map(function (k) {
+        const isOpt = String(k.OptOut).toUpperCase() === 'YA';
+        return '<tr>' +
+          '<td><strong>' + esc(k.Nama) + '</strong><br><small style="color:var(--muted);">' + esc(k.Info || k.Sumber || '') + '</small></td>' +
+          '<td class="tabular">' + (k.NoWA ? '+' + esc(k.NoWA) : '-') + '<br><small style="color:var(--muted);">' + esc(k.Email || '-') + '</small></td>' +
+          '<td><span class="pill pill-Diproses">' + esc(k.Segmen || 'Prospek') + '</span>' + (k.Tag ? '<br><small style="color:var(--muted);">🏷️ ' + esc(k.Tag) + '</small>' : '') + '</td>' +
+          '<td><span class="pill ' + (k.StatusWA === 'Terdaftar' ? 'pill-Terdaftar' : k.StatusWA === 'Tidak Terdaftar' ? 'pill-Batal' : 'pill-Pending') + '">' + esc(k.StatusWA || 'Belum Dicek') + '</span></td>' +
+          '<td><button type="button" class="btn btn-sm ' + (isOpt ? 'btn-danger' : 'btn-outline') + '" data-crm-opt="' + esc(k.KontakID) + '" data-opt-cur="' + (isOpt ? '1' : '0') + '">' + (isOpt ? 'Opt-Out: YA' : 'Aktif') + '</button></td>' +
+          '<td><div style="display:flex;gap:6px;">' +
+            '<button type="button" class="btn btn-outline btn-sm" data-crm-log="' + esc(k.KontakID) + '">📋 Interaksi</button>' +
+            '<button type="button" class="btn btn-outline btn-sm" data-crm-edit="' + esc(k.KontakID) + '">Edit</button>' +
+          '</div></td>' +
+        '</tr>';
+      }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Belum ada kontak pada filter ini.</td></tr>') +
+      '</tbody></table></div>';
+  }
+
   function renderAdminCrm(host) {
     const snap = STATE.adminData.notifCrm || DEMO_DB.notifCrm;
     const contacts = snap.contacts || [];
@@ -3310,15 +3539,41 @@
     const regWaCount = contacts.filter(function (k) { return k.StatusWA === 'Terdaftar'; }).length;
     const optOutCount = contacts.filter(function (k) { return String(k.OptOut).toUpperCase() === 'YA'; }).length;
 
-    const q = STATE.crmSearch.trim().toLowerCase();
-    const filtered = contacts.filter(function (k) {
-      if (STATE.crmSegmenFilter !== 'ALL' && k.Segmen !== STATE.crmSegmenFilter) return false;
-      if (q) {
-        const hay = (k.Nama + ' ' + k.NoWA + ' ' + k.Email + ' ' + k.Tag + ' ' + k.Segmen).toLowerCase();
-        if (hay.indexOf(q) < 0) return false;
-      }
-      return true;
-    });
+    function filterCrmContacts() {
+      const q = STATE.crmSearch.trim().toLowerCase();
+      return contacts.filter(function (k) {
+        if (STATE.crmSegmenFilter !== 'ALL' && k.Segmen !== STATE.crmSegmenFilter) return false;
+        if (q) {
+          const hay = (k.Nama + ' ' + k.NoWA + ' ' + k.Email + ' ' + k.Tag + ' ' + k.Segmen).toLowerCase();
+          if (hay.indexOf(q) < 0) return false;
+        }
+        return true;
+      });
+    }
+
+    function bindCrmRowActions(scope) {
+      scope.querySelectorAll('[data-crm-opt]').forEach(function (b) {
+        b.onclick = async function () {
+          const kid = b.getAttribute('data-crm-opt');
+          const next = b.getAttribute('data-opt-cur') !== '1';
+          const res = await apiCall('adminCrmToggleOptOut', { kontakId: kid, optOut: next }, 'POST');
+          if (res.success && res.data && res.data.snapshot) STATE.adminData.notifCrm = res.data.snapshot;
+          toast(res.message, res.success ? 'ok' : 'err');
+          renderAdminCrm(host);
+        };
+      });
+      scope.querySelectorAll('[data-crm-edit]').forEach(function (b) {
+        b.onclick = function () {
+          const c = contacts.find(function (x) { return x.KontakID === b.getAttribute('data-crm-edit'); });
+          openCrmContactEditorModal(c);
+        };
+      });
+      scope.querySelectorAll('[data-crm-log]').forEach(function (b) {
+        b.onclick = function () { openCrmInteractionDrawer(b.getAttribute('data-crm-log')); };
+      });
+    }
+
+    const filtered = filterCrmContacts();
 
     host.innerHTML =
       '<div class="kpi-grid">' +
@@ -3329,44 +3584,35 @@
       '</div>' +
 
       '<div class="panel-card">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<div class="admin-toolbar-row">' +
+          '<div class="admin-toolbar-controls">' +
             '<button type="button" class="btn btn-primary btn-sm" id="btn-crm-sync">🔄 Sinkronkan dari Pesanan &amp; Newsletter</button>' +
             '<button type="button" class="btn btn-wa btn-sm" id="btn-crm-validate">✅ Validasi Nomor WA (Fonnte)</button>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-crm-merge">🔗 Gabung Duplikat</button>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-crm-add">+ Kontak Manual</button>' +
           '</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<div class="admin-toolbar-controls">' +
             '<select id="crm-segmen-sel" class="select" style="width:auto;padding:7px 12px;font-size:0.82rem;">' +
               ['ALL', 'Pelanggan VIP', 'Pembeli Aktif', 'Prospek', 'Subscriber'].map(function (sg) {
                 return '<option value="' + sg + '"' + (STATE.crmSegmenFilter === sg ? ' selected' : '') + '>' + (sg === 'ALL' ? 'Semua Segmen' : sg) + '</option>';
               }).join('') +
             '</select>' +
-            '<input type="search" id="crm-search-inp" class="input" placeholder="Cari nama, WA, tag..." value="' + esc(STATE.crmSearch) + '" style="width:200px;padding:7px 12px;">' +
+            '<input type="search" id="crm-search-inp" class="input admin-search-input" placeholder="Cari nama, WA, tag..." value="' + esc(STATE.crmSearch) + '">' +
           '</div>' +
         '</div>' +
-
-        '<div class="table-wrap"><table class="data-table">' +
-          '<thead><tr><th>Nama &amp; Sumber</th><th>WhatsApp / Email</th><th>Segmen &amp; Tag</th><th>Status WA</th><th>Opt-Out</th><th>Aksi</th></tr></thead>' +
-          '<tbody>' + (filtered.length ? filtered.map(function (k) {
-            const isOpt = String(k.OptOut).toUpperCase() === 'YA';
-            return '<tr>' +
-              '<td><strong>' + esc(k.Nama) + '</strong><br><small style="color:var(--muted);">' + esc(k.Info || k.Sumber || '') + '</small></td>' +
-              '<td class="tabular">' + (k.NoWA ? '+' + esc(k.NoWA) : '-') + '<br><small style="color:var(--muted);">' + esc(k.Email || '-') + '</small></td>' +
-              '<td><span class="pill pill-Diproses">' + esc(k.Segmen || 'Prospek') + '</span>' + (k.Tag ? '<br><small style="color:var(--muted);">🏷️ ' + esc(k.Tag) + '</small>' : '') + '</td>' +
-              '<td><span class="pill ' + (k.StatusWA === 'Terdaftar' ? 'pill-Terdaftar' : k.StatusWA === 'Tidak Terdaftar' ? 'pill-Batal' : 'pill-Pending') + '">' + esc(k.StatusWA || 'Belum Dicek') + '</span></td>' +
-              '<td><button type="button" class="btn btn-sm ' + (isOpt ? 'btn-danger' : 'btn-outline') + '" data-crm-opt="' + esc(k.KontakID) + '" data-opt-cur="' + (isOpt ? '1' : '0') + '">' + (isOpt ? 'Opt-Out: YA' : 'Aktif') + '</button></td>' +
-              '<td><div style="display:flex;gap:6px;">' +
-                '<button type="button" class="btn btn-outline btn-sm" data-crm-log="' + esc(k.KontakID) + '">📋 Interaksi</button>' +
-                '<button type="button" class="btn btn-outline btn-sm" data-crm-edit="' + esc(k.KontakID) + '">Edit</button>' +
-              '</div></td>' +
-            '</tr>';
-          }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Belum ada kontak pada filter ini.</td></tr>') +
-          '</tbody></table></div>' +
+        '<div id="crm-table-host">' + renderCrmTableRowsHtml(filtered) + '</div>' +
       '</div>';
 
-    $('crm-segmen-sel').onchange = function (e) { STATE.crmSegmenFilter = e.target.value; renderAdminCrm(host); };
-    $('crm-search-inp').oninput = function (e) { STATE.crmSearch = e.target.value; renderAdminCrm(host); };
+    function refreshCrmTableInPlace() {
+      const tblHost = $('crm-table-host');
+      if (!tblHost) return;
+      tblHost.innerHTML = renderCrmTableRowsHtml(filterCrmContacts());
+      bindCrmRowActions(tblHost);
+    }
+
+    $('crm-segmen-sel').onchange = function (e) { STATE.crmSegmenFilter = e.target.value; refreshCrmTableInPlace(); };
+    const debouncedCrmSearch = debounce(refreshCrmTableInPlace, 75);
+    $('crm-search-inp').oninput = function (e) { STATE.crmSearch = e.target.value; debouncedCrmSearch(); };
 
     $('btn-crm-sync').onclick = async function () {
       toast('Menyinkronkan kontak dari Pesanan & Newsletter...', 'info');
@@ -3392,28 +3638,7 @@
     };
 
     $('btn-crm-add').onclick = function () { openCrmContactEditorModal(null); };
-
-    host.querySelectorAll('[data-crm-opt]').forEach(function (b) {
-      b.onclick = async function () {
-        const kid = b.getAttribute('data-crm-opt');
-        const next = b.getAttribute('data-opt-cur') !== '1';
-        const res = await apiCall('adminCrmToggleOptOut', { kontakId: kid, optOut: next }, 'POST');
-        if (res.success && res.data && res.data.snapshot) STATE.adminData.notifCrm = res.data.snapshot;
-        toast(res.message, res.success ? 'ok' : 'err');
-        renderAdminCrm(host);
-      };
-    });
-
-    host.querySelectorAll('[data-crm-edit]').forEach(function (b) {
-      b.onclick = function () {
-        const c = contacts.find(function (x) { return x.KontakID === b.getAttribute('data-crm-edit'); });
-        openCrmContactEditorModal(c);
-      };
-    });
-
-    host.querySelectorAll('[data-crm-log]').forEach(function (b) {
-      b.onclick = function () { openCrmInteractionDrawer(b.getAttribute('data-crm-log')); };
-    });
+    bindCrmRowActions($('crm-table-host') || host);
   }
 
   function openCrmContactEditorModal(contact) {
@@ -3532,7 +3757,7 @@
 
     host.innerHTML =
       // 1. Kredensial Fonnte & Saklar Utama
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;margin-bottom:20px;">' +
+      '<div class="admin-2col-grid">' +
         '<div class="panel-card" style="margin:0;">' +
           '<h3 style="margin:0 0 8px;font-size:1.02rem;">🔐 Gateway Fonnte (Script Properties)</h3>' +
           '<p style="font-size:0.82rem;color:var(--muted);margin-bottom:12px;">Token disimpan terenkripsi di sisi server Google Apps Script (tidak pernah terekspos ke kode browser).</p>' +
@@ -3748,7 +3973,7 @@
     const avail = lics.filter(function (l) { return l.status === 'Tersedia'; }).length;
 
     host.innerHTML =
-      '<div style="display:grid;grid-template-columns:1fr 1.6fr;gap:20px;">' +
+      '<div class="admin-license-split">' +
         '<div class="panel-card" style="margin:0;">' +
           '<h3 style="margin:0 0 10px;font-size:1.02rem;">+ Tambah / Generate Kode Lisensi</h3>' +
           '<p style="font-size:0.82rem;color:var(--muted);">Kode berstatus <strong>Tersedia</strong> otomatis dialokasikan ketika pesanan produk terkait diubah menjadi <strong>Selesai</strong>.</p>' +
@@ -3825,8 +4050,8 @@
         '<p style="font-size:0.86rem;color:var(--muted);margin-bottom:16px;">' +
           'Salin produk, pesanan, lisensi, dan riwayat dari spreadsheet versi lama (misalnya <code>NusaStore_GAS_v2.4</code>) ke database v3.0 dengan <strong>100% mode baca-saja pada file lama</strong>. Pencocokan dilakukan berdasarkan nama header kolom dan bersifat idempoten (aman dijalankan berulang untuk Delta-Sync sebelum cutover).' +
         '</p>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">' +
-          '<input id="inp-migrasi-url" class="input" style="flex:1;min-width:260px;" placeholder="Tempel URL penuh atau ID Google Spreadsheet versi lama..." value="' + esc(scan ? scan.sourceId : '') + '">' +
+        '<div class="migrasi-url-row">' +
+          '<input id="inp-migrasi-url" class="input" placeholder="Tempel URL penuh atau ID Google Spreadsheet versi lama..." value="' + esc(scan ? scan.sourceId : '') + '">' +
           '<button type="button" class="btn btn-primary" id="btn-migrasi-scan">🔍 1. Pindai Struktur &amp; Data (Dry-Run)</button>' +
         '</div>' +
 
@@ -3896,7 +4121,7 @@
     const slides = STATE.heroSlides || [];
 
     host.innerHTML =
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;margin-bottom:20px;">' +
+      '<div class="admin-2col-grid">' +
         '<form id="form-store-settings" class="panel-card" style="margin:0;">' +
           '<h3 style="margin:0 0 12px;font-size:1.05rem;">🏪 Identitas Toko &amp; Pembayaran</h3>' +
           '<div class="form-grid-2">' +
@@ -4005,6 +4230,7 @@
       await apiCall('adminLogoutAll', {}, 'POST');
       STATE.adminToken = '';
       sessionStorage.removeItem(LS.ADMIN_TOKEN);
+      sessionStorage.removeItem(LS.ADMIN_BOOT);
       exitAdminToStorefront();
       toast('Seluruh perangkat telah dikeluarkan.', 'ok');
     };
@@ -4036,6 +4262,7 @@
       els.forEach(function (el) { el.classList.add('is-visible'); });
       return;
     }
+    const vh = window.innerHeight || 800;
     const obs = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (en.isIntersecting) {
@@ -4043,8 +4270,15 @@
           obs.unobserve(en.target);
         }
       });
-    }, { threshold: 0.08 });
-    els.forEach(function (el) { obs.observe(el); });
+    }, { threshold: 0.04, rootMargin: '0px 0px 40px 0px' });
+    els.forEach(function (el) {
+      const r = el.getBoundingClientRect();
+      if (r.top < vh * 1.05) {
+        el.classList.add('is-visible');
+      } else {
+        obs.observe(el);
+      }
+    });
   }
 
   function bindGlobalEvents() {
@@ -4163,14 +4397,15 @@
       }
     });
 
-    // Pencarian Instan + Dropdown Saran
+    // Pencarian Instan + Dropdown Saran (Debounced 60ms Tanpa Lag Ketikan)
     const sInp = $('search-input');
     const sSel = $('search-cat-select');
     const sSug = $('search-suggest');
+    const debouncedCatalogRender = debounce(function () { renderCatalog(); }, 60);
     if (sInp) {
       sInp.oninput = function () {
         STATE.searchQuery = sInp.value;
-        renderCatalog();
+        debouncedCatalogRender();
         const q = sInp.value.trim().toLowerCase();
         if (q.length < 2) { sSug.classList.add('hidden'); return; }
         const matches = STATE.products.filter(function (p) {
@@ -4340,6 +4575,7 @@
       $('btn-admin-logout').onclick = function () {
         STATE.adminToken = '';
         sessionStorage.removeItem(LS.ADMIN_TOKEN);
+        sessionStorage.removeItem(LS.ADMIN_BOOT);
         exitAdminToStorefront();
         toast('Anda telah keluar dari Admin Portal.', 'info');
       };
@@ -4359,24 +4595,24 @@
   async function initApp() {
     initTheme();
     bindGlobalEvents();
-    initScrollReveal();
-    initLifelikeMascot();
 
     if (IS_DEMO) {
       if ($('demo-mode-banner')) $('demo-mode-banner').classList.remove('hidden');
       if ($('demo-pin-display')) $('demo-pin-display').textContent = DEMO_SESSION_PIN;
     }
 
-    // 1. SWR: Tampilkan instan dari cache lokal (TTL 15 menit sesuai PRD) bila tersedia
+    // 1. 0ms Instant First Paint (SWR): tampilkan seketika dari cache lokal ATAU katalog bawaan tanpa menunggu jaringan!
     const cached = loadJson(LS.PUB_CACHE, null);
-    if (cached && cached.data && !IS_DEMO && (Date.now() - (cached.ts || 0) < 15 * 60 * 1000)) {
+    if (cached && cached.data && !IS_DEMO) {
       applyPublicData(cached.data);
-    } else if (IS_DEMO) {
-      const sim = await apiCall('getPublicData', {}, 'GET');
-      if (sim.success) applyPublicData(sim.data);
+    } else {
+      applyPublicData(DEMO_DB);
     }
 
-    // 2. Revalidasi segar dari REST API Google Apps Script di latar belakang
+    initScrollReveal();
+    initLifelikeMascot();
+
+    // 2. Revalidasi segar dari REST API Google Apps Script secara non-blocking di latar belakang
     if (!IS_DEMO) {
       try {
         const fresh = await apiCall('getPublicData', {}, 'GET');
@@ -4386,9 +4622,7 @@
         }
       } catch (e) {
         if (!cached) {
-          // Fallback anggun bila jaringan pengguna terputus sementara
-          applyPublicData(DEMO_DB);
-          toast('Gagal menghubungi server GAS, menampilkan katalog cadangan.', 'err');
+          toast('Koneksi server sedang padat — menampilkan katalog instan.', 'info');
         }
       }
     }
