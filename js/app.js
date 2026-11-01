@@ -1321,6 +1321,15 @@
   let testiFlipTimer = null;
   let testiFlipCursor = 0;
 
+  function fmtDateClean(raw) {
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}T/.test(String(raw))) {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    return String(raw);
+  }
+
   function renderTestimonials() {
     const grid = $('testi-grid');
     if (!grid) return;
@@ -1363,7 +1372,7 @@
           '<div class="tcard-face tcard-back">' +
             '<div style="display:flex;align-items:center;justify-content:space-between;">' +
               '<span style="font-size:0.73rem;color:#7DD3FC;font-weight:800;letter-spacing:0.06em;">HASIL &amp; DAMPAK NYATA</span>' +
-              '<span style="font-size:0.73rem;color:#CBD5E1;">' + esc(t.tanggal || '') + '</span>' +
+              '<span style="font-size:0.73rem;color:#CBD5E1;">' + esc(fmtDateClean(t.tanggal)) + '</span>' +
             '</div>' +
             '<div class="tcard-impact-box">' +
               '<small>Highlight Pencapaian</small>' +
@@ -1417,7 +1426,7 @@
             '<h3 style="margin:0;font-size:1.15rem;">' + esc(t.nama) + '</h3>' +
             (t.terverifikasi === 'Ya' ? '<span class="tcard-verified">✓ Transaksi Terverifikasi</span>' : '') +
           '</div>' +
-          '<div style="color:var(--muted);font-size:0.86rem;">' + esc(t.jabatan_perusahaan) + ' • ' + esc(t.tanggal || '') + '</div>' +
+          '<div style="color:var(--muted);font-size:0.86rem;">' + esc(t.jabatan_perusahaan) + ' • ' + esc(fmtDateClean(t.tanggal)) + '</div>' +
           '<div style="color:#F59E0B;font-size:1rem;margin-top:3px;">' + stars + ' <strong style="color:var(--text);">(' + (t.rating || 5) + '.0 / 5.0)</strong></div>' +
         '</div>' +
       '</div>' +

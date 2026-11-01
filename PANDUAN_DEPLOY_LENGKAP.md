@@ -9,21 +9,20 @@ Selamat datang di **NusaStore v3.0 ProAPI**! Aplikasi ini dibangun dengan arsite
 ## 📁 Struktur Folder Proyek
 
 ```text
-NusaStore_v3_ProAPI/
-├── frontend/                     <-- KHUSUS FRONTEND STATIS (Arahkan Git ke folder ini!)
-│   ├── index.html                <-- Halaman utama Storefront + Admin Portal SPA
-│   ├── css/
-│   │   └── style.css             <-- Desain responsif, animasi berkilau, flip 3D & Dark Mode
-│   └── js/
-│       ├── config.js             <-- HANYA berisi GAS_URL (Zero Literal Secrets!)
-│       └── app.js                <-- Logika SPA, REST Client, CRM, Migrasi & Karakter Hidup
-│
-├── backend/                      <-- KHUSUS BACKEND GOOGLE APPS SCRIPT (Jangan di-push ke GitHub publik)
+NusaStore_v3_ProAPI/              <-- Akar Repositori GitHub Pages (/ root)
+├── index.html                    <-- Halaman utama Storefront + Admin Portal SPA
+├── css/
+│   └── style.css                 <-- Desain responsif, animasi berkilau, flip 3D & Dark Mode
+├── js/
+│   ├── config.js                 <-- HANYA berisi GAS_URL (Zero Literal Secrets!)
+│   └── app.js                    <-- Logika SPA, REST Client, CRM, Migrasi & Karakter Hidup
+├── .nojekyll                     <-- Bypass Jekyll agar GitHub Pages tayang instan
+├── .gitignore                    <-- Mengabaikan folder backend/ dari GitHub publik
+├── backend/                      <-- KHUSUS BACKEND GOOGLE APPS SCRIPT (Lokal saja)
 │   ├── appsscript.json           <-- Konfigurasi V8, Timezone Asia/Jakarta & OAuth Scopes
 │   ├── Kode.gs                   <-- Router REST API (doGet/doPost), Keamanan HMAC & CacheX
 │   ├── NotifikasiCRM.gs          <-- Antrean Non-Blocking WA/Email, Blast WA & CRM Kontak
 │   └── Migrasi.gs                <-- Utilitas Pindai (Dry-Run) & Sinkronisasi Database Lama
-│
 └── PANDUAN_DEPLOY_LENGKAP.md     <-- Dokumen panduan ini
 ```
 

@@ -1,0 +1,4 @@
+# Abaikan kode backend GAS agar repositori GitHub Pages hanya berisi frontend statis
+backend/
+.DS_Store
+Thumbs.db
