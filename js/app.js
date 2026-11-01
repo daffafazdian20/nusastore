@@ -192,6 +192,180 @@
     const m = String(str || '').match(/(\d[\d\s-]{6,}\d)/);
     return m ? m[1].replace(/\D/g, '') : '';
   }
+
+  // ── Mesin QRIS Resmi (Gambar Google Drive / URL + EMVCo Dynamic Nominal CRC16) ──
+  function isEmvQrisPayload(val) {
+    return /^000201\d{2}/.test(String(val || '').trim());
+  }
+  function crc16CcittHex(str) {
+    let crc = 0xFFFF;
+    const s = String(str || '');
+    for (let i = 0; i < s.length; i++) {
+      crc ^= (s.charCodeAt(i) & 0xFF) << 8;
+      for (let b = 0; b < 8; b++) {
+        if (crc & 0x8000) crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+        else crc = (crc << 1) & 0xFFFF;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+  function buildDynamicQrisPayload(rawEmv, amountRp) {
+    const s = String(rawEmv || '').trim();
+    if (!isEmvQrisPayload(s)) return s;
+    const amt = Math.round(Number(amountRp) || 0);
+    const tags = [];
+    let pos = 0;
+    while (pos + 4 <= s.length) {
+      const tag = s.slice(pos, pos + 2);
+      const len = parseInt(s.slice(pos + 2, pos + 4), 10);
+      if (isNaN(len) || len < 0 || pos + 4 + len > s.length) return s;
+      const val = s.slice(pos + 4, pos + 4 + len);
+      pos += 4 + len;
+      if (tag === '63') break;
+      if (tag === '54') continue;
+      tags.push({ tag: tag, val: val });
+    }
+    if (!tags.length) return s;
+    if (amt > 0) {
+      const amtStr = String(amt);
+      for (let i = 0; i < tags.length; i++) {
+        if (tags[i].tag === '01' && tags[i].val === '11') tags[i].val = '12';
+      }
+      const idx58 = tags.findIndex(function (t) { return t.tag === '58'; });
+      const tag54 = { tag: '54', val: amtStr };
+      if (idx58 >= 0) tags.splice(idx58, 0, tag54);
+      else tags.push(tag54);
+    }
+    const body = tags.map(function (t) {
+      return t.tag + String(t.val.length).padStart(2, '0') + t.val;
+    }).join('') + '6304';
+    return body + crc16CcittHex(body);
+  }
+  function resolveQrisDisplay(rawQris, amountRp) {
+    const raw = String(rawQris || '').trim();
+    if (!raw) {
+      return { configured: false, mode: 'none', imgSrc: '', imgFallback: '', openUrl: '', emvPayload: '' };
+    }
+    if (isEmvQrisPayload(raw)) {
+      const emv = buildDynamicQrisPayload(raw, amountRp);
+      const amt = Math.round(Number(amountRp) || 0);
+      const primaryQr = 'https://quickchart.io/qr?size=380&margin=1&ecLevel=M&text=' + encodeURIComponent(emv);
+      const fallbackQr = 'https://api.qrserver.com/v1/create-qr-code/?size=380x380&margin=8&data=' + encodeURIComponent(emv);
+      return {
+        configured: true,
+        mode: amt > 0 ? 'emv_dynamic' : 'emv_static',
+        imgSrc: primaryQr,
+        imgFallback: fallbackQr,
+        openUrl: primaryQr,
+        emvPayload: emv
+      };
+    }
+    const src = driveImgClient(raw);
+    const fb = driveImgFallback(raw);
+    return {
+      configured: true,
+      mode: 'image',
+      imgSrc: src,
+      imgFallback: fb,
+      openUrl: raw.indexOf('data:') === 0 ? src : raw,
+      emvPayload: ''
+    };
+  }
+  function prepareQrisImageUpload(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) { reject(new Error('Pilih gambar QRIS terlebih dahulu.')); return; }
+      const rd = new FileReader();
+      rd.onerror = function () { reject(new Error('Gagal membaca berkas gambar.')); };
+      rd.onload = function () {
+        const dataUrl = String(rd.result || '');
+        if (file.size <= 2 * 1024 * 1024) {
+          resolve({
+            dataUrl: dataUrl,
+            base64: dataUrl.split(',')[1] || '',
+            mime: file.type || 'image/png',
+            filename: file.name || 'qris-nusastore.png'
+          });
+          return;
+        }
+        const img = new Image();
+        img.onerror = function () {
+          resolve({
+            dataUrl: dataUrl,
+            base64: dataUrl.split(',')[1] || '',
+            mime: file.type || 'image/jpeg',
+            filename: file.name || 'qris-nusastore.jpg'
+          });
+        };
+        img.onload = function () {
+          const maxDim = 1400;
+          let w = img.naturalWidth || img.width;
+          let h = img.naturalHeight || img.height;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const cv = document.createElement('canvas');
+          cv.width = w;
+          cv.height = h;
+          const ctx = cv.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          const outUrl = cv.toDataURL('image/jpeg', 0.92);
+          resolve({
+            dataUrl: outUrl,
+            base64: outUrl.split(',')[1] || '',
+            mime: 'image/jpeg',
+            filename: (file.name || 'qris-nusastore').replace(/\.[^.]+$/, '') + '.jpg'
+          });
+        };
+        img.src = dataUrl;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  function syncSettingsToLocalCaches(nextSettings, nextHeroSlides) {
+    if (nextSettings && typeof nextSettings === 'object') {
+      STATE.settings = Object.assign({}, STATE.settings, nextSettings);
+      if (IS_DEMO) Object.assign(DEMO_DB.settings, nextSettings);
+    }
+    if (Array.isArray(nextHeroSlides)) {
+      STATE.heroSlides = nextHeroSlides;
+      if (IS_DEMO) DEMO_DB.heroSlides = nextHeroSlides;
+    }
+    _lastPublicDataSig = '';
+    try {
+      const pubCached = loadJson(LS.PUB_CACHE, null);
+      if (pubCached && pubCached.data) {
+        pubCached.data.settings = Object.assign({}, pubCached.data.settings || {}, STATE.settings);
+        if (Array.isArray(nextHeroSlides)) pubCached.data.heroSlides = nextHeroSlides;
+        pubCached.ts = Date.now();
+        saveJson(LS.PUB_CACHE, pubCached);
+      } else {
+        saveJson(LS.PUB_CACHE, {
+          ts: Date.now(),
+          data: {
+            settings: STATE.settings,
+            heroSlides: STATE.heroSlides,
+            categories: STATE.categories,
+            products: STATE.products,
+            testimonials: STATE.testimonials
+          }
+        });
+      }
+    } catch (e) { /* skip */ }
+    try {
+      const rawBoot = sessionStorage.getItem(LS.ADMIN_BOOT);
+      if (rawBoot) {
+        const bootObj = JSON.parse(rawBoot);
+        bootObj.settings = Object.assign({}, bootObj.settings || {}, STATE.settings);
+        if (Array.isArray(nextHeroSlides)) bootObj.heroSlides = nextHeroSlides;
+        sessionStorage.setItem(LS.ADMIN_BOOT, JSON.stringify(bootObj));
+      }
+    } catch (e) { /* skip */ }
+    updateTelemetryBar();
+  }
   function openProofLightbox(url, title) {
     if (!url) return;
     const imgUrl = driveImgClient(url);
@@ -836,6 +1010,10 @@
           try { DEMO_DB.heroSlides = JSON.parse(b.settings.hero_slides_json); } catch (e) { /* skip */ }
         }
         return ok({ settings: DEMO_DB.settings, heroSlides: DEMO_DB.heroSlides }, 'Pengaturan disimpan.');
+      case 'adminUploadFile': {
+        const simUrl = 'data:' + (b.mime || 'image/png') + ';base64,' + (b.base64 || '');
+        return ok({ fileId: 'DEMO_QRIS', url: simUrl, img: simUrl, name: b.filename || 'qris-nusastore.png' }, 'Berkas berhasil diunggah (Simulasi).');
+      }
       case 'adminSaveSecret':
         DEMO_DB.notifCrm.config.fonnteAda = b.value !== '__HAPUS__';
         DEMO_DB.notifCrm.config.fonnteSamar = b.value === '__HAPUS__' ? '' : String(b.value).slice(0, 4) + '••••••' + String(b.value).slice(-3);
@@ -1538,19 +1716,82 @@
 
   function getEffectivePaymentSettings() {
     const st = STATE.settings || {};
+    const rawQris = String(st.link_qris || DEMO_DB.settings.link_qris || '').trim();
     return {
       rekening_bank: st.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
-      link_qris: st.link_qris ? driveImgClient(st.link_qris) : '',
+      raw_qris: rawQris,
+      link_qris: rawQris ? driveImgClient(rawQris) : '',
       batas_bayar_jam: st.batas_bayar_jam || '24',
-      nama_toko: st.nama_toko || 'NusaStore',
+      nama_toko: st.nama_toko || DEMO_DB.settings.nama_toko || 'NusaStore',
+      nama_perusahaan: st.nama_perusahaan || DEMO_DB.settings.nama_perusahaan || 'PT Nusa Digital Teknologi',
       nomor_wa_admin: st.nomor_wa_admin || DEMO_DB.settings.nomor_wa_admin || '6281288009900'
     };
+  }
+
+  function renderOfficialQrisCardHtml(ord, overrideRawQris) {
+    const pay = getEffectivePaymentSettings();
+    const rawQris = overrideRawQris !== undefined ? String(overrideRawQris || '').trim() : pay.raw_qris;
+    const totalRp = Math.round(Number(ord && ord.total_harga) || 0);
+    const qris = resolveQrisDisplay(rawQris, totalRp);
+
+    if (!qris.configured) {
+      return '<div class="qris-official-card">' +
+        '<div class="qris-official-head">' +
+          '<span class="qris-brand-badge"><span class="qris-brand-pill">QRIS</span><span>Standar Kode QR Nasional</span></span>' +
+          '<span class="qris-gpn-pill">GPN</span>' +
+        '</div>' +
+        '<div style="padding:22px 16px;">' +
+          '<div style="font-size:2rem;line-height:1;margin-bottom:8px;">📱</div>' +
+          '<div style="font-size:0.9rem;font-weight:800;color:var(--text);margin-bottom:6px;">Barcode QRIS Resmi ' + esc(pay.nama_toko) + ' Belum Diunggah</div>' +
+          '<div style="font-size:0.79rem;color:var(--muted);line-height:1.5;max-width:340px;margin:0 auto 12px;">' +
+            'Silakan gunakan tab <strong>🏦 Transfer Bank</strong> untuk pembayaran instan, atau klik tombol <strong>Konfirmasi via WhatsApp</strong> di bawah untuk menerima QRIS langsung dari Admin.' +
+          '</div>' +
+          (STATE.adminToken
+            ? '<button type="button" class="btn btn-primary btn-sm btn-admin-jump-qris">⚙️ Input Barcode QRIS di Portal Admin Sekarang</button>'
+            : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    return '<div class="qris-official-card" data-qris-zoom-url="' + esc(qris.openUrl || qris.imgSrc) + '">' +
+      '<div class="qris-official-head">' +
+        '<span class="qris-brand-badge"><span class="qris-brand-pill">QRIS</span><span>Standar Kode QR Nasional</span></span>' +
+        '<span class="qris-gpn-pill">' + (qris.mode === 'emv_dynamic' ? '⚡ Nominal Otomatis' : 'GPN • Resmi') + '</span>' +
+      '</div>' +
+      '<div class="qris-merchant-block">' +
+        '<div class="qris-merchant-name">' + esc(pay.nama_toko) + ' — ' + esc(pay.nama_perusahaan) + '</div>' +
+        '<div class="qris-merchant-sub">GoPay • OVO • DANA • ShopeePay • LinkAja • BCA / Livin / BRImo / Semua M-Banking</div>' +
+      '</div>' +
+      '<div class="qris-img-frame">' +
+        '<img src="' + esc(qris.imgSrc) + '" data-fb="' + esc(qris.imgFallback) + '" alt="Barcode QRIS Resmi ' + esc(pay.nama_toko) + '" class="qris-zoom-trigger">' +
+        '<div class="qris-img-doc-fb" style="display:none;padding:14px;font-size:0.78rem;color:#475569;">Klik tombol <strong>Buka / Simpan QRIS</strong> di bawah untuk menampilkan berkas barcode penuh.</div>' +
+      '</div>' +
+      (totalRp > 0
+        ? '<div class="qris-amount-strip">' +
+            '<div>' +
+              '<div style="font-size:0.7rem;color:var(--muted);font-weight:700;text-transform:uppercase;">' +
+                (qris.mode === 'emv_dynamic' ? '⚡ Nominal Otomatis Terkunci di QRIS' : 'Nominal Pembayaran Tepat') +
+              '</div>' +
+              '<div class="tabular" style="font-size:1.06rem;font-weight:900;color:var(--primary);">Rp ' + rupiah(totalRp) + '</div>' +
+            '</div>' +
+            '<button type="button" class="copy-pill-btn" data-copy-val="' + esc(totalRp) + '" data-copy-lbl="Nominal pembayaran">📋 Salin Nominal</button>' +
+          '</div>'
+        : '') +
+      '<div class="qris-actions-row">' +
+        '<button type="button" class="copy-pill-btn qris-zoom-btn">🔍 Perbesar Barcode</button>' +
+        '<a href="' + esc(qris.openUrl || qris.imgSrc) + '" target="_blank" rel="noopener" class="copy-pill-btn" style="text-decoration:none;">📥 Buka / Simpan QRIS</a>' +
+      '</div>' +
+      '<div class="qris-steps-foot">' +
+        '<strong>Cara Bayar Instan:</strong> 1) Scan barcode di atas (atau klik <em>Buka / Simpan QRIS</em> lalu pilih dari galeri pada M-Banking / E-Wallet di HP Anda) &#8594; ' +
+        '2) Pastikan nominal <strong>Rp ' + rupiah(totalRp) + '</strong> ke <strong>' + esc(pay.nama_toko) + '</strong> &#8594; ' +
+        '3) Unggah screenshot bukti bayar di bawah.' +
+      '</div>' +
+    '</div>';
   }
 
   function renderPaymentMethodPanelsHtml(ord, activeMethod) {
     const pay = getEffectivePaymentSettings();
     const accDigits = extractAccountDigits(pay.rekening_bank);
-    const qrFallback = 'https://quickchart.io/qr?size=200&text=' + encodeURIComponent('NUSASTORE|' + ord.id_pesanan + '|RP' + Math.round(Number(ord.total_harga) || 0));
 
     return '<div class="pay-method-tabs">' +
         '<button type="button" class="pay-method-tab ' + (activeMethod !== 'qris' ? 'is-active' : '') + '" data-switch-pay="bank">🏦 Transfer Bank</button>' +
@@ -1568,20 +1809,52 @@
           '3. Unggah bukti pembayaran pada formulir di bawah agar pesanan segera diverifikasi.' +
         '</div>' +
       '</div>' +
-      '<div id="pay-tab-qris" class="pay-box-card ' + (activeMethod !== 'qris' ? 'hidden' : '') + '" style="text-align:center;">' +
-        (pay.link_qris
-          ? '<div style="font-size:0.82rem;font-weight:700;margin-bottom:8px;">Scan QRIS Resmi ' + esc(pay.nama_toko) + ' (GoPay, OVO, DANA, ShopeePay, M-Banking)</div>' +
-            '<img src="' + esc(pay.link_qris) + '" alt="QRIS Resmi" style="max-width:230px;width:100%;border-radius:12px;border:1px solid var(--border);padding:8px;background:#FFF;margin:0 auto 10px;cursor:pointer;" id="btn-zoom-qris">' +
-            '<div><button type="button" class="copy-pill-btn" id="btn-zoom-qris-2">🔍 Perbesar Gambar QRIS</button></div>'
-          : '<div style="font-size:0.84rem;font-weight:700;margin-bottom:6px;">Kode Referensi Pesanan #' + esc(ord.id_pesanan) + '</div>' +
-            '<img src="' + esc(qrFallback) + '" width="150" height="150" alt="QR Referensi" style="border-radius:12px;border:1px solid var(--border);padding:6px;background:#FFF;margin:0 auto 8px;">' +
-            '<div style="font-size:0.79rem;color:var(--muted);max-width:440px;margin:0 auto;">Gambar QRIS Merchant dapat diminta langsung dalam 1 klik melalui tombol <strong>Konfirmasi via WhatsApp</strong> di bawah, atau gunakan tab <strong>Transfer Bank</strong> untuk pembayaran instan.</div>'
-        ) +
+      '<div id="pay-tab-qris" class="pay-box-card ' + (activeMethod !== 'qris' ? 'hidden' : '') + '" style="padding:12px;">' +
+        renderOfficialQrisCardHtml(ord) +
       '</div>';
   }
 
-  function bindPaymentMethodTabs(rootEl) {
+  function bindQrisCardInteractions(containerEl) {
+    if (!containerEl) return;
     const pay = getEffectivePaymentSettings();
+    containerEl.querySelectorAll('[data-copy-val]').forEach(function (btn) {
+      btn.onclick = function () { copyText(btn.getAttribute('data-copy-val'), btn.getAttribute('data-copy-lbl')); };
+    });
+    const qCard = containerEl.querySelector('.qris-official-card');
+    const zoomUrl = qCard ? qCard.getAttribute('data-qris-zoom-url') : '';
+    const qImg = containerEl.querySelector('.qris-zoom-trigger');
+    if (qImg) {
+      qImg.onerror = function () {
+        const fb = qImg.getAttribute('data-fb');
+        if (fb && qImg.src !== fb) {
+          qImg.src = fb;
+        } else {
+          qImg.style.display = 'none';
+          const docFb = containerEl.querySelector('.qris-img-doc-fb');
+          if (docFb) docFb.style.display = 'block';
+        }
+      };
+      if (zoomUrl) {
+        qImg.onclick = function () { openProofLightbox(zoomUrl, '📱 Barcode QRIS Resmi ' + pay.nama_toko); };
+      }
+    }
+    const zBtn = containerEl.querySelector('.qris-zoom-btn');
+    if (zBtn && zoomUrl) {
+      zBtn.onclick = function () { openProofLightbox(zoomUrl, '📱 Barcode QRIS Resmi ' + pay.nama_toko); };
+    }
+    const jumpBtn = containerEl.querySelector('.btn-admin-jump-qris');
+    if (jumpBtn) {
+      jumpBtn.onclick = function () {
+        closeOverlay('modal-payment-checkout');
+        closeOverlay('modal-order-tracker');
+        STATE.adminTab = 'payment';
+        enterAdminPortal(null);
+      };
+    }
+  }
+
+  function bindPaymentMethodTabs(rootEl) {
+    if (!rootEl) return;
     rootEl.querySelectorAll('[data-switch-pay]').forEach(function (btn) {
       btn.onclick = function () {
         const mode = btn.getAttribute('data-switch-pay');
@@ -1592,24 +1865,21 @@
         const qEl = rootEl.querySelector('#pay-tab-qris');
         if (bEl) bEl.classList.toggle('hidden', mode !== 'bank');
         if (qEl) qEl.classList.toggle('hidden', mode !== 'qris');
-        const sel = rootEl.querySelector('[name="metode_bayar"]');
+        const scope = rootEl.parentElement || document;
+        const sel = scope.querySelector('[name="metode_bayar"]');
         if (sel) sel.value = mode === 'qris' ? 'QRIS' : 'Transfer Bank';
       };
     });
-    rootEl.querySelectorAll('[data-copy-val]').forEach(function (btn) {
-      btn.onclick = function () { copyText(btn.getAttribute('data-copy-val'), btn.getAttribute('data-copy-lbl')); };
-    });
-    const z1 = rootEl.querySelector('#btn-zoom-qris');
-    const z2 = rootEl.querySelector('#btn-zoom-qris-2');
-    if (z1 && pay.link_qris) z1.onclick = function () { openProofLightbox(pay.link_qris, '📱 QRIS Resmi ' + pay.nama_toko); };
-    if (z2 && pay.link_qris) z2.onclick = function () { openProofLightbox(pay.link_qris, '📱 QRIS Resmi ' + pay.nama_toko); };
+    bindQrisCardInteractions(rootEl);
   }
 
   let _activeCheckoutOrd = null;
   function refreshPaymentMethodBoxInModal() {
     const host = $('mpc-pay-methods-host');
     if (!host || !_activeCheckoutOrd) return;
-    host.innerHTML = renderPaymentMethodPanelsHtml(_activeCheckoutOrd, 'bank');
+    const curBtn = host.querySelector('[data-switch-pay].is-active');
+    const curMode = curBtn ? curBtn.getAttribute('data-switch-pay') : 'bank';
+    host.innerHTML = renderPaymentMethodPanelsHtml(_activeCheckoutOrd, curMode);
     bindPaymentMethodTabs(host);
   }
 
@@ -2412,6 +2682,12 @@
       pBadge.textContent = String(pendingOrders);
       pBadge.classList.toggle('hidden', pendingOrders <= 0);
     }
+    const qrisBadge = $('nav-badge-qris');
+    if (qrisBadge) {
+      const hasQris = Boolean(STATE.settings && String(STATE.settings.link_qris || '').trim());
+      qrisBadge.className = 'pill ' + (hasQris ? 'pill-Lunas' : 'pill-Pending');
+      qrisBadge.textContent = hasQris ? 'Aktif' : 'Belum Diisi';
+    }
   }
 
   async function enterAdminPortal(bootPayload) {
@@ -2461,6 +2737,12 @@
     $('view-admin').classList.add('hidden');
     $('view-storefront').classList.remove('hidden');
     $('wa-float-wrap').classList.remove('hidden');
+    const st = STATE.settings || {};
+    if ($('ui-promo-topbar')) $('ui-promo-topbar').textContent = st.promo_topbar || '';
+    if ($('ui-brand-name')) $('ui-brand-name').textContent = st.nama_toko || 'NusaStore';
+    if ($('ui-brand-tagline')) $('ui-brand-tagline').textContent = st.tagline || 'Enterprise Digital';
+    if ($('ft-brand-name')) $('ft-brand-name').textContent = st.nama_toko || 'NusaStore';
+    if ($('ft-company-name')) $('ft-company-name').textContent = st.nama_perusahaan || '';
     renderHeroSlideshow();
     renderCategories();
     renderCatalog();
@@ -2527,6 +2809,7 @@
     const titles = {
       overview: 'Ringkasan Penjualan & Analitik',
       orders: 'Manajemen Transaksi, Bukti Transfer & Faktur',
+      payment: 'Pengaturan Barcode QRIS Asli & Rekening Pembayaran',
       catalog: 'Katalog Produk Multi-Gambar, Kategori & Testimoni',
       crm: 'CRM Kontak Pelanggan & Riwayat Interaksi',
       notif: 'Pusat Notifikasi WA Fonnte, Email & Blast Massal',
@@ -2542,6 +2825,7 @@
     const host = $('admin-panel-host');
     if (STATE.adminTab === 'overview') renderAdminOverview(host);
     else if (STATE.adminTab === 'orders') renderAdminOrders(host);
+    else if (STATE.adminTab === 'payment') renderAdminPaymentQris(host);
     else if (STATE.adminTab === 'catalog') renderAdminCatalog(host);
     else if (STATE.adminTab === 'crm') renderAdminCrm(host);
     else if (STATE.adminTab === 'notif') renderAdminNotif(host);
@@ -2740,6 +3024,7 @@
           '</div>' +
           '<div class="admin-toolbar-controls">' +
             '<input type="search" id="ord-search-input" class="input admin-search-input" placeholder="Cari ID, nama, WA..." value="' + esc(STATE.orderSearch) + '">' +
+            '<button type="button" class="btn btn-outline btn-sm" id="btn-goto-qris-menu">💳 Input / Atur QRIS</button>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-export-csv">⬇️ CSV</button>' +
             '<button type="button" class="btn btn-outline btn-sm" id="btn-export-xlsx">📊 Excel (.xlsx)</button>' +
           '</div>' +
@@ -2769,6 +3054,13 @@
       STATE.orderSearch = e.target.value;
       debouncedOrderSearch();
     };
+    const gotoQrisBtn = $('btn-goto-qris-menu');
+    if (gotoQrisBtn) {
+      gotoQrisBtn.onclick = function () {
+        STATE.adminTab = 'payment';
+        renderAdminActiveTab();
+      };
+    }
     $('btn-export-csv').onclick = function () { exportOrdersCsv(getFilteredAdminOrders()); };
     $('btn-export-xlsx').onclick = function () { exportOrdersXlsx(getFilteredAdminOrders()); };
     bindOrderTableActions($('ord-table-host') || host);
@@ -2784,6 +3076,12 @@
       : ('- ' + (o.nama_produk || 'Produk') + ' = Rp ' + rupiah(o.total_harga));
 
     const portalUrl = window.location.origin + window.location.pathname;
+    const rawQrisVal = String(st.link_qris || '').trim();
+    const waQrisInfo = !rawQrisVal
+      ? ('Cek menu Cek Pesanan di ' + portalUrl + ' atau balas pesan ini untuk gambar QRIS resmi.')
+      : (isEmvQrisPayload(rawQrisVal)
+        ? ('Scan QRIS Resmi Nominal Otomatis langsung di menu Cek Pesanan: ' + portalUrl)
+        : rawQrisVal);
     const vars = {
       nama: o.nama_pelanggan || 'Kak',
       id_pesanan: o.id_pesanan || '',
@@ -2793,7 +3091,7 @@
       tanggal: fmtDateShort(o.tanggal_order),
       nama_toko: st.nama_toko || DEMO_DB.settings.nama_toko || 'NusaStore',
       rekening: st.rekening_bank || DEMO_DB.settings.rekening_bank || 'BCA 828-091-8899 a.n. PT Nusa Digital Teknologi',
-      link_qris: st.link_qris || ('Cek menu Cek Pesanan di ' + portalUrl + ' atau balas pesan ini untuk gambar QRIS resmi.'),
+      link_qris: waQrisInfo,
       batas_bayar_jam: st.batas_bayar_jam || '24',
       kunci_lisensi: o.kunci_lisensi || '(Segera diaktifkan / cek menu Cek Pesanan di website)',
       link_invoice: portalUrl,
@@ -4115,6 +4413,226 @@
     }
   }
 
+  // ── PANEL ADMIN: METODE PEMBAYARAN, REKENING BANK & BARCODE QRIS ASLI ──────
+  function renderAdminPaymentQris(host) {
+    const st = STATE.settings || {};
+    const curQris = String(st.link_qris || '').trim();
+    const hasQris = Boolean(curQris);
+    const sampleOrder = {
+      id_pesanan: 'ORD-CONTOH-01',
+      nama_pelanggan: 'Pelanggan NusaStore',
+      total_harga: 350000
+    };
+
+    host.innerHTML =
+      '<div class="admin-2col-grid">' +
+        '<form id="form-admin-qris-payment" class="panel-card" style="margin:0;display:grid;gap:14px;align-content:start;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--border);">' +
+            '<div>' +
+              '<h3 style="margin:0;font-size:1.05rem;">📱 Input Menu Barcode QRIS Asli NusaStore</h3>' +
+              '<small style="color:var(--muted);">Tampil otomatis di Pop-Up Tagihan Checkout &amp; Menu Cek Pesanan Klien</small>' +
+            '</div>' +
+            '<span id="qris-status-pill" class="pill ' + (hasQris ? 'pill-Lunas' : 'pill-Pending') + '">' +
+              (hasQris ? '✓ QRIS Resmi Aktif' : '⏳ Belum Diatur') +
+            '</span>' +
+          '</div>' +
+
+          '<div class="qris-upload-dropzone">' +
+            '<div style="font-size:1.75rem;line-height:1;margin-bottom:6px;">📤</div>' +
+            '<div style="font-weight:800;font-size:0.9rem;color:var(--text);margin-bottom:4px;">Upload Gambar Barcode QRIS Asli dari HP / Laptop</div>' +
+            '<div style="font-size:0.77rem;color:var(--muted);margin-bottom:12px;line-height:1.45;">Pilih file gambar barcode QRIS resmi toko Anda (JPG, PNG, atau WEBP). Otomatis tersimpan ke Google Drive &amp; langsung aktif tanpa delay.</div>' +
+            '<input type="file" id="inp-upload-qris-file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">' +
+            '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+              '<button type="button" class="btn btn-primary btn-sm" id="btn-pick-qris-file">📷 Pilih &amp; Upload Barcode QRIS</button>' +
+              (hasQris ? '<button type="button" class="btn btn-danger btn-sm" id="btn-clear-qris">🗑️ Hapus / Ganti QRIS</button>' : '<button type="button" class="btn btn-danger btn-sm hidden" id="btn-clear-qris">🗑️ Hapus / Ganti QRIS</button>') +
+            '</div>' +
+            '<div id="qris-upload-progress" style="font-size:0.76rem;color:var(--primary);font-weight:700;margin-top:8px;" class="hidden"></div>' +
+          '</div>' +
+
+          '<div class="field" style="margin:0;">' +
+            '<label>Link Gambar Barcode QRIS / Kode Standar QRIS EMVCo (Opsional Manual)</label>' +
+            '<input class="input" id="inp-qris-link" name="link_qris" value="' + esc(curQris) + '" placeholder="Otomatis terisi saat upload, atau tempel Link Google Drive / Kode 000201...">' +
+            '<small style="color:var(--muted);font-size:0.73rem;display:block;margin-top:4px;line-height:1.4;">Mendukung: <strong>1) Upload langsung di atas</strong>, <strong>2) Link Gambar Google Drive / HTTPS</strong>, atau <strong>3) Kode String QRIS Resmi (diawali 000201...)</strong> untuk nominal otomatis.</small>' +
+          '</div>' +
+
+          '<hr style="border:none;border-top:1px solid var(--border);margin:2px 0;">' +
+
+          '<h4 style="margin:0;font-size:0.95rem;">🏦 Rekening Bank Tujuan Transfer &amp; Batas Waktu</h4>' +
+          '<div class="field" style="margin:0;">' +
+            '<label>Rekening Bank Resmi (Tampil di Tab Transfer Bank)</label>' +
+            '<input class="input" name="rekening_bank" value="' + esc(st.rekening_bank || '') + '" placeholder="Contoh: BCA 828-091-8899 a.n. PT Nusa Digital Teknologi">' +
+          '</div>' +
+          '<div class="form-grid-2">' +
+            '<div class="field" style="margin:0;">' +
+              '<label>Nama Merchant / Toko di Kartu QRIS</label>' +
+              '<input class="input" name="nama_toko" value="' + esc(st.nama_toko || 'NusaStore') + '">' +
+            '</div>' +
+            '<div class="field" style="margin:0;">' +
+              '<label>Batas Waktu Bayar (Jam)</label>' +
+              '<input type="number" class="input" name="batas_bayar_jam" min="1" max="168" value="' + esc(st.batas_bayar_jam || '24') + '">' +
+            '</div>' +
+          '</div>' +
+
+          '<button type="submit" class="btn btn-primary btn-shimmer" id="btn-save-qris-settings" style="width:100%;">💾 Simpan Barcode QRIS &amp; Pengaturan Pembayaran</button>' +
+        '</form>' +
+
+        '<div class="panel-card" style="margin:0;display:grid;gap:12px;align-content:start;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid var(--border);">' +
+            '<div>' +
+              '<h3 style="margin:0;font-size:1.05rem;">👁️ Pratinjau Langsung di Layar Klien</h3>' +
+              '<small style="color:var(--muted);">Simulasi tampilan tab QRIS Instan (Contoh Tagihan Rp 350.000)</small>' +
+            '</div>' +
+            '<button type="button" class="btn btn-outline btn-sm" id="btn-test-storefront-qris">🌐 Lihat Etalase</button>' +
+          '</div>' +
+          '<div id="admin-qris-live-preview">' +
+            renderOfficialQrisCardHtml(sampleOrder, curQris) +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    const previewHost = $('admin-qris-live-preview');
+    const qrisInput = $('inp-qris-link');
+    const fileInput = $('inp-upload-qris-file');
+    const pickBtn = $('btn-pick-qris-file');
+    const clearBtn = $('btn-clear-qris');
+    const progEl = $('qris-upload-progress');
+    const statusPill = $('qris-status-pill');
+
+    function updatePreviewCard(rawVal) {
+      if (!previewHost) return;
+      previewHost.innerHTML = renderOfficialQrisCardHtml(sampleOrder, rawVal);
+      bindQrisCardInteractions(previewHost);
+      const active = Boolean(String(rawVal || '').trim());
+      if (statusPill) {
+        statusPill.className = 'pill ' + (active ? 'pill-Lunas' : 'pill-Pending');
+        statusPill.textContent = active ? '✓ QRIS Resmi Aktif' : '⏳ Belum Diatur';
+      }
+      if (clearBtn) clearBtn.classList.toggle('hidden', !active);
+    }
+
+    bindQrisCardInteractions(previewHost);
+
+    const debouncedPreview = debounce(function () {
+      updatePreviewCard(qrisInput ? qrisInput.value : '');
+    }, 80);
+    if (qrisInput) {
+      qrisInput.oninput = debouncedPreview;
+    }
+
+    if (pickBtn && fileInput) {
+      pickBtn.onclick = function () { fileInput.click(); };
+      fileInput.onchange = async function () {
+        const f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        if (f.size > 8 * 1024 * 1024) {
+          toast('Ukuran gambar melebihi 8 MB. Pilih gambar QRIS yang lebih ringan.', 'err');
+          fileInput.value = '';
+          return;
+        }
+        pickBtn.disabled = true;
+        pickBtn.textContent = '⏳ Mengunggah Barcode QRIS...';
+        if (progEl) {
+          progEl.textContent = 'Mengoptimalkan & mengunggah gambar QRIS ke Google Drive resmi...';
+          progEl.classList.remove('hidden');
+        }
+        try {
+          const prep = await prepareQrisImageUpload(f);
+          // 0ms Instant Preview sebelum server selesai merespons
+          updatePreviewCard(prep.dataUrl);
+
+          const upRes = await apiCall('adminUploadFile', {
+            kind: 'qris',
+            base64: prep.base64,
+            mime: prep.mime,
+            filename: prep.filename,
+            refId: 'QRIS_NUSASTORE'
+          }, 'POST');
+
+          if (upRes && upRes.success && upRes.data && upRes.data.url) {
+            const finalUrl = upRes.data.url;
+            if (qrisInput) qrisInput.value = finalUrl;
+            syncSettingsToLocalCaches({ link_qris: finalUrl });
+            updatePreviewCard(finalUrl);
+
+            const saveRes = await apiCall('adminSaveSettings', { settings: { link_qris: finalUrl } }, 'POST');
+            if (saveRes && saveRes.success) {
+              if (saveRes.data && saveRes.data.settings) syncSettingsToLocalCaches(saveRes.data.settings);
+              toast('Barcode QRIS asli NusaStore berhasil diunggah & diaktifkan!', 'ok');
+            } else {
+              toast((saveRes && saveRes.message) || 'Gambar terunggah, klik Simpan untuk mengunci pengaturan.', 'info');
+            }
+          } else {
+            updatePreviewCard(qrisInput ? qrisInput.value : '');
+            toast((upRes && upRes.message) || 'Gagal mengunggah gambar QRIS ke Google Drive.', 'err');
+          }
+        } catch (err) {
+          updatePreviewCard(qrisInput ? qrisInput.value : '');
+          toast('Gagal memproses gambar QRIS: ' + (err.message || err), 'err');
+        } finally {
+          pickBtn.disabled = false;
+          pickBtn.textContent = '📷 Pilih & Upload Barcode QRIS';
+          fileInput.value = '';
+          if (progEl) progEl.classList.add('hidden');
+        }
+      };
+    }
+
+    if (clearBtn) {
+      clearBtn.onclick = async function () {
+        if (!confirm('Hapus gambar Barcode QRIS saat ini?')) return;
+        const prevVal = qrisInput ? qrisInput.value : '';
+        if (qrisInput) qrisInput.value = '';
+        syncSettingsToLocalCaches({ link_qris: '' });
+        updatePreviewCard('');
+        toast('Barcode QRIS dihapus.', 'info');
+
+        const res = await apiCall('adminSaveSettings', { settings: { link_qris: '' } }, 'POST');
+        if (!res || !res.success) {
+          if (qrisInput) qrisInput.value = prevVal;
+          syncSettingsToLocalCaches({ link_qris: prevVal });
+          updatePreviewCard(prevVal);
+          toast((res && res.message) || 'Gagal menghapus QRIS di server.', 'err');
+        }
+      };
+    }
+
+    const testBtn = $('btn-test-storefront-qris');
+    if (testBtn) {
+      testBtn.onclick = function () { exitAdminToStorefront(); };
+    }
+
+    $('form-admin-qris-payment').onsubmit = async function (ev) {
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const patch = {};
+      fd.forEach(function (v, k) { patch[k] = String(v || '').trim(); });
+      if (patch.link_qris && patch.link_qris.length > 690 && !IS_DEMO) {
+        toast('Link terlalu panjang (> 690 karakter). Gunakan tombol Upload Barcode QRIS di atas agar tersimpan ke Google Drive.', 'err');
+        return;
+      }
+
+      const prevSnapshot = Object.assign({}, STATE.settings);
+      // 0ms Optimistic UI & Instant Cache Sync
+      syncSettingsToLocalCaches(patch);
+      updatePreviewCard(patch.link_qris);
+      toast('Pengaturan QRIS & Pembayaran berhasil disimpan!', 'ok');
+
+      const btn = $('btn-save-qris-settings');
+      if (btn) btn.disabled = true;
+      const res = await apiCall('adminSaveSettings', { settings: patch }, 'POST');
+      if (btn) btn.disabled = false;
+
+      if (res && res.success) {
+        if (res.data && res.data.settings) syncSettingsToLocalCaches(res.data.settings);
+        updatePreviewCard(STATE.settings.link_qris || '');
+      } else {
+        syncSettingsToLocalCaches(prevSnapshot);
+        updatePreviewCard(prevSnapshot.link_qris || '');
+        toast((res && res.message) || 'Gagal menyimpan pengaturan pembayaran.', 'err');
+      }
+    };
+  }
+
   // ── PANEL ADMIN 8: PENGATURAN TOKO, SLIDE HERO & KEAMANAN ───────────────────
   function renderAdminSettings(host) {
     const st = STATE.settings;
@@ -4134,6 +4652,13 @@
             '<div class="field"><label>Email Kontak</label><input class="input" name="email_kontak" value="' + esc(st.email_kontak || '') + '"></div>' +
           '</div>' +
           '<div class="field"><label>Rekening Bank Tujuan Transfer</label><input class="input" name="rekening_bank" value="' + esc(st.rekening_bank || '') + '"></div>' +
+          '<div class="field">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">' +
+              '<label style="margin:0;">Barcode QRIS Resmi (Link Gambar / Kode QRIS)</label>' +
+              '<button type="button" class="copy-pill-btn" id="btn-jump-payment-tab">📷 Buka Menu Upload QRIS</button>' +
+            '</div>' +
+            '<input class="input" name="link_qris" value="' + esc(st.link_qris || '') + '" placeholder="Upload via menu Pembayaran & QRIS atau tempel link di sini">' +
+          '</div>' +
           '<div class="form-grid-2">' +
             '<div class="field"><label>Diskon Badge Hero (%)</label><input type="number" class="input" name="hero_diskon" value="' + esc(st.hero_diskon || '25') + '"></div>' +
             '<div class="field"><label>Target Omzet Bulanan (Rp)</label><input type="number" class="input" name="target_omzet_bulanan" value="' + esc(st.target_omzet_bulanan || '36500000') + '"></div>' +
@@ -4177,16 +4702,30 @@
         '<button type="button" class="btn btn-primary" style="margin-top:14px;" id="btn-save-hero-slides">💾 Simpan Semua Slide Hero</button>' +
       '</div>';
 
+    const jumpPayBtn = $('btn-jump-payment-tab');
+    if (jumpPayBtn) {
+      jumpPayBtn.onclick = function () {
+        STATE.adminTab = 'payment';
+        renderAdminActiveTab();
+      };
+    }
+
     $('form-store-settings').onsubmit = async function (ev) {
       ev.preventDefault();
       const fd = new FormData(ev.target);
       const obj = {};
-      fd.forEach(function (v, k) { obj[k] = v; });
+      fd.forEach(function (v, k) { obj[k] = String(v || '').trim(); });
+      const prevSettings = Object.assign({}, STATE.settings);
+      syncSettingsToLocalCaches(obj);
+      toast('Pengaturan toko disimpan.', 'ok');
+
       const res = await apiCall('adminSaveSettings', { settings: obj }, 'POST');
       if (res.success) {
-        if (res.data && res.data.settings) STATE.settings = res.data.settings;
-        toast(res.message, 'ok');
-      } else toast(res.message, 'err');
+        if (res.data && res.data.settings) syncSettingsToLocalCaches(res.data.settings);
+      } else {
+        syncSettingsToLocalCaches(prevSettings);
+        toast(res.message || 'Gagal menyimpan pengaturan.', 'err');
+      }
     };
 
     $('btn-save-hero-slides').onclick = async function () {
@@ -4199,11 +4738,10 @@
           subtitle: box.querySelector('.hs-sub').value
         });
       });
+      syncSettingsToLocalCaches(null, updated);
+      toast('Slide Hero berhasil diperbarui!', 'ok');
       const res = await apiCall('adminSaveSettings', { settings: { hero_slides_json: JSON.stringify(updated) } }, 'POST');
-      if (res.success) {
-        STATE.heroSlides = updated;
-        toast('Slide Hero berhasil diperbarui!', 'ok');
-      } else toast(res.message, 'err');
+      if (!res.success) toast(res.message || 'Gagal menyimpan slide di server.', 'err');
     };
 
     $('form-change-pin').onsubmit = async function (ev) {

@@ -2117,6 +2117,144 @@ img {
   border-radius: 12px;
 }
 
+/* ── Kartu QRIS Resmi Standar Nasional (Checkout Klien & Admin Preview) ────── */
+.qris-official-card {
+  position: relative;
+  max-width: 400px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
+  text-align: center;
+}
+.qris-official-card::before {
+  content: '';
+  display: block;
+  height: 5px;
+  background: linear-gradient(90deg, #E11D48 0%, #EF4444 45%, #2563EB 55%, #0EA5E9 100%);
+}
+.qris-official-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 9px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.qris-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 0.84rem;
+  color: var(--text);
+}
+.qris-brand-pill {
+  background: #E11D48;
+  color: #FFFFFF;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 3px 7px;
+  border-radius: 6px;
+  letter-spacing: 0.06em;
+}
+.qris-gpn-pill {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.qris-merchant-block {
+  padding: 10px 14px 4px;
+}
+.qris-merchant-name {
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+.qris-merchant-sub {
+  font-size: 0.73rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.qris-img-frame {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px;
+  margin: 8px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 184px;
+}
+.qris-img-frame img {
+  max-width: min(230px, 64vw);
+  max-height: 260px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+  cursor: zoom-in;
+  border-radius: 6px;
+}
+.qris-amount-strip {
+  margin: 0 14px 10px;
+  padding: 9px 12px;
+  border-radius: 11px;
+  background: var(--primary-soft);
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  text-align: left;
+}
+.qris-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 14px 12px;
+}
+.qris-actions-row .btn,
+.qris-actions-row .copy-pill-btn {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+}
+.qris-steps-foot {
+  padding: 9px 14px 12px;
+  border-top: 1px dashed var(--border);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.48;
+  text-align: left;
+}
+.qris-upload-dropzone {
+  border: 2px dashed rgba(37, 99, 235, 0.42);
+  background: var(--primary-soft);
+  border-radius: 14px;
+  padding: 16px;
+  text-align: center;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.qris-upload-dropzone:hover {
+  border-color: var(--primary);
+}
+
 @media print {
   body * { visibility: hidden !important; }
   #invoice-print-area, #invoice-print-area * { visibility: visible !important; }
@@ -2402,6 +2540,8 @@ img {
   .kpi-card small { font-size: 0.68rem; }
   .kpi-card h3 { font-size: 1.12rem; }
   .pay-method-tabs { grid-template-columns: 1fr; }
+  .qris-actions-row { grid-template-columns: 1fr; }
+  .qris-official-head { flex-wrap: wrap; }
   .admin-sidebar-foot .admin-nav-btn { padding: 6px 8px; font-size: 0.71rem; }
   .nl-form { flex-direction: column; }
   .nl-form .btn { width: 100%; justify-content: center; }
