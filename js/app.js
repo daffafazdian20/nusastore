@@ -448,7 +448,7 @@
         ctaPrimary: 'Jelajahi Katalog',
         ctaTarget: '#products',
         ctaSecondary: 'Konsultasi Gratis',
-        image: im('photo-1460925895917-afdab827c52f'),
+        image: 'img/hero-showcase.jpg',
         metricLabel: 'Kecepatan Muat',
         metricValue: '< 0.8 Detik'
       },
