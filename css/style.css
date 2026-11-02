@@ -550,6 +550,7 @@ img {
 .hero-carousel {
   position: relative;
   z-index: 2;
+  min-height: 480px;
 }
 .hero-slide {
   display: none;
@@ -787,6 +788,7 @@ img {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 14px;
+  min-height: 110px;
 }
 .cat-card {
   position: relative;
@@ -894,6 +896,7 @@ img {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 20px;
+  min-height: 600px;
 }
 
 .pcard {
@@ -1189,6 +1192,7 @@ img {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 22px;
+  min-height: 320px;
 }
 
 .tcard-scene {
@@ -1521,6 +1525,7 @@ img {
   z-index: 98;
   will-change: transform;
   transition: opacity 0.3s ease;
+  contain: strict;
 }
 .nusa-mascot-layer.is-docked {
   opacity: 0;
@@ -2382,6 +2387,7 @@ img {
 
 /* 3. Tablet & Layar <= 1024px (iPad, Galaxy Tab, Laptop Kecil) */
 @media (max-width: 1024px) {
+  .hero-carousel { min-height: 560px; }
   .hero-slide { grid-template-columns: 1fr; gap: 26px; }
   .hero-visual-card { max-width: 640px; width: 100%; margin: 0 auto; }
   .testi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2512,6 +2518,7 @@ img {
 
   /* Hero Section Mobile (Tanpa Elemen Keluar Layar) */
   .hero-section { padding: 24px 0 32px; }
+  .hero-carousel { min-height: 590px; }
   .hero-title { font-size: clamp(1.55rem, 6.4vw, 2.15rem); line-height: 1.2; }
   .hero-sub { font-size: 0.9rem; margin-bottom: 18px; }
   .hero-cta-row { display: grid; grid-template-columns: 1fr; gap: 10px; }

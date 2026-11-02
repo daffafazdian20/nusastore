@@ -1171,11 +1171,27 @@
     const slides = STATE.heroSlides;
     if (STATE.heroIdx >= slides.length) STATE.heroIdx = 0;
 
+    // Zero CLS / Instant Hydration: jika slide sudah ada di DOM (pre-rendered), cukup toggle status aktif
+    const existingSlides = host.querySelectorAll('.hero-slide');
+    const existingDots = dots.querySelectorAll('.hero-dot');
+    if (existingSlides.length === slides.length && existingDots.length === slides.length) {
+      existingSlides.forEach(function (el, idx) {
+        if (idx === STATE.heroIdx) el.classList.add('is-active');
+        else el.classList.remove('is-active');
+      });
+      existingDots.forEach(function (d, idx) {
+        if (idx === STATE.heroIdx) d.classList.add('is-active');
+        else d.classList.remove('is-active');
+      });
+      restartHeroAutoTimer();
+      return;
+    }
+
     const diskon = STATE.settings.hero_diskon || '25';
     host.innerHTML = slides.map(function (s, idx) {
       return '<div class="hero-slide ' + (idx === STATE.heroIdx ? 'is-active' : '') + '" data-slide-idx="' + idx + '">' +
         '<div>' +
-          '<div class="hero-pill">✨ ' + esc(s.badge || 'SOLUSI DIGITAL ENTERPRISE') + '</div>' +
+          '<div class="hero-pill">⚡ ' + esc(s.badge || 'SOLUSI DIGITAL ENTERPRISE') + '</div>' +
           '<h1 class="hero-title">' + esc(s.title) + '</h1>' +
           '<p class="hero-sub">' + esc(s.subtitle) + '</p>' +
           '<div class="hero-cta-row">' +
@@ -1191,7 +1207,7 @@
         '<div class="hero-visual-card">' +
           '<div class="hero-discount-orb">HEMAT HINGGA ' + esc(diskon) + '%</div>' +
           '<div class="hero-visual-frame">' +
-            '<img src="' + esc(s.image) + '" alt="' + esc(s.title) + '" loading="' + (idx === 0 ? 'eager' : 'lazy') + '">' +
+            '<img src="' + esc(s.image) + '" alt="' + esc(s.title) + '" width="600" height="412" loading="' + (idx === 0 ? 'eager' : 'lazy') + '"' + (idx === 0 ? ' fetchpriority="high"' : '') + ' decoding="async">' +
           '</div>' +
           '<div class="hero-metric-chip">' +
             '<small>' + esc(s.metricLabel || 'Performa Unggulan') + '</small>' +
@@ -1318,7 +1334,7 @@
           '<button type="button" class="pcard-wish ' + (wished ? 'is-wished' : '') + '" data-wish-toggle="' + esc(p.id_produk) + '" title="Simpan ke Favorit" aria-label="Simpan Favorit">' + (wished ? '♥' : '♡') + '</button>' +
           '<div class="pcard-slides">' +
             imgs.map(function (u, ix) {
-              return '<img class="pcard-slide-img ' + (ix === 0 ? 'is-active' : '') + '" src="' + esc(u) + '" alt="' + esc(p.nama_produk) + ' foto ' + (ix + 1) + '" loading="lazy">';
+              return '<img class="pcard-slide-img ' + (ix === 0 ? 'is-active' : '') + '" src="' + esc(u) + '" alt="' + esc(p.nama_produk) + ' foto ' + (ix + 1) + '" width="400" height="300" loading="lazy" decoding="async">';
             }).join('') +
           '</div>' +
           (multi ? (
